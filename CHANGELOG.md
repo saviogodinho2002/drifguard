@@ -3,6 +3,21 @@
 Todas as mudanças notáveis deste projeto são documentadas aqui. Formato baseado em
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [0.4.0] - 2026-07-29
+
+### Changed
+- **Breaking: pacote renomeado de `drifguard` pra `driftguard`** (corrige o "t" que faltava de
+  "drift"). Afeta tudo: nome do pacote Composer (`saviogodinho2002/driftguard`), namespace PHP
+  (`Saviogodinho2002\DriftGuard\`), nome da service provider (`DriftGuardServiceProvider`), todos
+  os 8 comandos artisan (`driftguard:analyze`, `driftguard:apply`, `driftguard:doctor`,
+  `driftguard:init`, `driftguard:answer`, `driftguard:fields`, `driftguard:context:list`), arquivo
+  e chave de config (`config/driftguard.php`, `config('driftguard.*')`), tag de publish
+  (`driftguard-config`), e os defaults de path/namespace de `scope_class` (`app_path('DriftGuard/Scopes')`,
+  `'App\\DriftGuard\\Scopes'`). Quem já instalou sob o nome antigo precisa: `composer remove
+  saviogodinho2002/drifguard && composer require saviogodinho2002/driftguard`, republicar o config,
+  atualizar qualquer script/CI que chame `drifguard:*`, e regenerar classes `scope_class` existentes
+  (`driftguard:apply --force`) — o pacote não migra automaticamente nada gerado sob o nome antigo.
+
 ## [0.3.1] - 2026-07-29
 
 Motivado por outro relatório real de produção: 2 fields `scope_class` no mesmo model
@@ -15,12 +30,12 @@ escrito sobrescrevia silenciosamente a lógica do 1º, sem erro, sem warning, se
   incluem o nome do FIELD, não só do model — o nome da classe gerada passa de `{Model}Scope` pra
   `{Model}{FieldStudly}Scope` (ex: `ContractEscopoMembroScope`), **mesmo pra quem só tem 1 field
   `scope_class`** (sem colisão nenhuma) — pacote ainda é 0.x, mudança de nome aceitável via minor
-  bump. Se você já tem classes geradas sob o nome antigo: rode `drifguard:apply --force` depois de
+  bump. Se você já tem classes geradas sob o nome antigo: rode `driftguard:apply --force` depois de
   atualizar pra regerar sob o nome novo, e apague manualmente o arquivo antigo órfão (o pacote não
   deleta arquivo que ele não está escrevendo na rodada atual).
 
 ### Added
-- `drifguard:doctor` detecta nome de `FieldSpec` duplicado em `config('drifguard.fields')` — antes
+- `driftguard:doctor` detecta nome de `FieldSpec` duplicado em `config('driftguard.fields')` — antes
   disso, um nome repetido já sobrescrevia silenciosamente o field anterior no schema de
   tool-calling (`PromptBuilder::buildTools()`), independente de ser `scope_class` ou não.
 
@@ -51,18 +66,18 @@ Motivado por um relatório real de produção (segundo projeto externo): 13/45 (
   em lote.
 - `Support\BraceMatcher` — casamento de chaves balanceado extraído de `ModelDiscovery` pra um
   helper compartilhado (usado agora também pelo sanitizador de `scope_class`).
-- `drifguard:init` — estabelece o baseline de `context.json` (`last_commit_hash` = HEAD atual) sem
-  chamar o LLM, pra quem não quer pagar o custo de `drifguard:analyze --force` só pra fazer o
+- `driftguard:init` — estabelece o baseline de `context.json` (`last_commit_hash` = HEAD atual) sem
+  chamar o LLM, pra quem não quer pagar o custo de `driftguard:analyze --force` só pra fazer o
   arquivo existir. Nunca sobrescreve um `context.json` já existente sem `--force`.
 
 ### Changed
-- **`storage_path` default mudou de `storage_path('app/drifguard')` pra `base_path('drifguard')`**
+- **`storage_path` default mudou de `storage_path('app/driftguard')` pra `base_path('driftguard')`**
   — o `.gitignore` padrão do Laravel exclui `storage/`, então o default antigo deixava
   `context.json` (last_commit_hash, perguntas pendentes/respondidas) fora do git: cada dev/agente
   via um estado local diferente, sem saber o que outro já analisou ou respondeu. Bate agora com o
   comportamento do sistema original de onde este pacote foi extraído (`base_path('ai-models-sync')`,
   rastreado no git). Quem já está usando o pacote e quer manter o comportamento antigo pode apontar
-  `storage_path` de volta pra `storage_path('app/drifguard')` e adicionar ao próprio `.gitignore`.
+  `storage_path` de volta pra `storage_path('app/driftguard')` e adicionar ao próprio `.gitignore`.
 
 ## [0.2.2] - 2026-07-29
 
@@ -83,14 +98,14 @@ Motivado por um relatório real de produção (segundo projeto externo): 13/45 (
 ### Added
 - `FieldSpec` fluente (`::string()`/`::enum()`/`::array()`/`::scopeClass()`) com validação eager,
   além do `fromArray()` já existente.
-- `drifguard:doctor` — valida `config('drifguard.*')` (fields, paths, chave de API) sem chamar o LLM.
-- `--dry-run` em `drifguard:analyze` (já existia em `apply`); `--json` em ambos os commands.
-- Modo `rerun`: `drifguard:answer {model} {resposta}` responde uma pergunta pendente
+- `driftguard:doctor` — valida `config('driftguard.*')` (fields, paths, chave de API) sem chamar o LLM.
+- `--dry-run` em `driftguard:analyze` (já existia em `apply`); `--json` em ambos os commands.
+- Modo `rerun`: `driftguard:answer {model} {resposta}` responde uma pergunta pendente
   (`ask_question`) sem editar `questions.md` à mão, e a próxima análise já inclui esse model com a
   resposta injetada no contexto.
 - `ModelDiscovery::extractRelevantMethods()` + `max_snippet_chars` — arquivo de apoio grande
   (controller/service) manda só os métodos relevantes, ou trunca em vez de ir inteiro sem teto.
-- `drifguard:fields` / `drifguard:context:list` — introspecção da config ativa sem chamar o LLM.
+- `driftguard:fields` / `driftguard:context:list` — introspecção da config ativa sem chamar o LLM.
 - `allowed_base_path` — guarda de diretório em `request_file`, recusa leitura fora da raiz do
   projeto em vez de ler qualquer path que a IA peça.
 

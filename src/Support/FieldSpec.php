@@ -1,12 +1,12 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Support;
+namespace Saviogodinho2002\DriftGuard\Support;
 
 use InvalidArgumentException;
 
 /**
  * Descreve 1 campo "extra" do catálogo (além da base fixa: descricao, notas, e os reflection-only
- * tabela/campos/relacoes) — definido pelo app-host via config('drifguard.fields'), nunca hardcoded
+ * tabela/campos/relacoes) — definido pelo app-host via config('driftguard.fields'), nunca hardcoded
  * no pacote. É isso que substitui o antigo TOOLS array fixo com escopo_fn/classe_acesso/gatilhos/etc.
  */
 final class FieldSpec
@@ -67,7 +67,7 @@ final class FieldSpec
     }
 
     // ── Factories fluentes ───────────────────────────────────────────────────
-    // Alternativa ao array cru pra quem monta config('drifguard.fields') programaticamente (dev com
+    // Alternativa ao array cru pra quem monta config('driftguard.fields') programaticamente (dev com
     // autocomplete, ou agente de IA editando o config) — valida no momento da construção (eager),
     // não só quando algum command roda.
 

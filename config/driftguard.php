@@ -30,13 +30,13 @@ return [
     |--------------------------------------------------------------------------
     | Storage interno (context.json / proposal.php / questions.md)
     |--------------------------------------------------------------------------
-    | Default é base_path('drifguard') — raiz do projeto, DE PROPÓSITO fora de storage/ (que o
+    | Default é base_path('driftguard') — raiz do projeto, DE PROPÓSITO fora de storage/ (que o
     | .gitignore padrão do Laravel exclui). context.json guarda last_commit_hash e perguntas
     | pendentes/respondidas — se ficar de fora do git, cada dev/agente tem seu próprio estado local
     | e nunca vê o que outro já analisou ou respondeu. Se quiser mesmo assim NÃO commitar isso,
-    | aponte pra storage_path('app/drifguard') e adicione ao seu .gitignore.
+    | aponte pra storage_path('app/driftguard') e adicione ao seu .gitignore.
     */
-    'storage_path' => base_path('drifguard'),
+    'storage_path' => base_path('driftguard'),
 
     /*
     |--------------------------------------------------------------------------
@@ -64,7 +64,7 @@ return [
     | tool-calling, com a instrução que você escrever guiando a IA.
     |
     | Tipos suportados: 'string', 'enum' (exige 'enum_values'), 'array',
-    | 'scope_class' (em vez de string, o drifguard GERA um arquivo .php de classe
+    | 'scope_class' (em vez de string, o driftguard GERA um arquivo .php de classe
     | de escopo de tenant, implementando Contracts\TenantScope — nunca guarda
     | código como string pra eval() depois).
     |
@@ -107,8 +107,8 @@ return [
     | Path/namespace das classes de escopo geradas (type: scope_class)
     |--------------------------------------------------------------------------
     */
-    'scope_class_path'      => app_path('Drifguard/Scopes'),
-    'scope_class_namespace' => 'App\\Drifguard\\Scopes',
+    'scope_class_path'      => app_path('DriftGuard/Scopes'),
+    'scope_class_namespace' => 'App\\DriftGuard\\Scopes',
 
     /*
     |--------------------------------------------------------------------------

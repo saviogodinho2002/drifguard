@@ -1,6 +1,6 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Support;
+namespace Saviogodinho2002\DriftGuard\Support;
 
 /**
  * Faz o merge de uma proposta da IA contra o config atual, e reescreve o arquivo de saída

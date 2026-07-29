@@ -1,9 +1,9 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Tests\Unit;
+namespace Saviogodinho2002\DriftGuard\Tests\Unit;
 
-use Saviogodinho2002\Drifguard\Support\ModelReflector;
-use Saviogodinho2002\Drifguard\Tests\TestCase;
+use Saviogodinho2002\DriftGuard\Support\ModelReflector;
+use Saviogodinho2002\DriftGuard\Tests\TestCase;
 
 class ModelReflectorTest extends TestCase
 {
@@ -12,7 +12,7 @@ class ModelReflectorTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->reflector = new ModelReflector(modelNamespace: 'Saviogodinho2002\\Drifguard\\Tests\\Fixtures\\Models');
+        $this->reflector = new ModelReflector(modelNamespace: 'Saviogodinho2002\\DriftGuard\\Tests\\Fixtures\\Models');
     }
 
     public function test_metadata_for_reflects_real_model(): void

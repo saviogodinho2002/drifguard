@@ -1,12 +1,12 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Contracts;
+namespace Saviogodinho2002\DriftGuard\Contracts;
 
 use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Contrato pras classes de escopo GERADAS por um FieldSpec do tipo 'scope_class'. Diferente de
- * guardar a regra como string de código (avaliada em runtime via eval()), o drifguard escreve um
+ * guardar a regra como string de código (avaliada em runtime via eval()), o driftguard escreve um
  * arquivo .php de verdade implementando esta interface — revisável por git diff normal, navegável
  * por IDE, sem eval() de string nenhum.
  *

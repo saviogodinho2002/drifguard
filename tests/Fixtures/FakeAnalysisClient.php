@@ -1,8 +1,8 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Tests\Fixtures;
+namespace Saviogodinho2002\DriftGuard\Tests\Fixtures;
 
-use Saviogodinho2002\Drifguard\Contracts\AnalysisClient;
+use Saviogodinho2002\DriftGuard\Contracts\AnalysisClient;
 
 /**
  * Cliente de análise fake pra testes — devolve respostas pré-programadas em vez de chamar uma API

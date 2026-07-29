@@ -1,9 +1,9 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Tests\Console;
+namespace Saviogodinho2002\DriftGuard\Tests\Console;
 
 use Illuminate\Support\Facades\Artisan;
-use Saviogodinho2002\Drifguard\Tests\TestCase;
+use Saviogodinho2002\DriftGuard\Tests\TestCase;
 
 class DoctorCommandTest extends TestCase
 {
@@ -13,13 +13,13 @@ class DoctorCommandTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tmpStorage      = sys_get_temp_dir() . '/drifguard_doctor_storage_' . uniqid();
-        $this->tmpOutputConfig = sys_get_temp_dir() . '/drifguard_doctor_models_' . uniqid() . '.php';
+        $this->tmpStorage      = sys_get_temp_dir() . '/driftguard_doctor_storage_' . uniqid();
+        $this->tmpOutputConfig = sys_get_temp_dir() . '/driftguard_doctor_models_' . uniqid() . '.php';
 
-        config(['drifguard.models_path'  => $this->fixturesPath('Models')]);
-        config(['drifguard.output_path'  => $this->tmpOutputConfig]);
-        config(['drifguard.storage_path' => $this->tmpStorage]);
-        config(['drifguard.fields'       => []]);
+        config(['driftguard.models_path'  => $this->fixturesPath('Models')]);
+        config(['driftguard.output_path'  => $this->tmpOutputConfig]);
+        config(['driftguard.storage_path' => $this->tmpStorage]);
+        config(['driftguard.fields'       => []]);
     }
 
     protected function tearDown(): void
@@ -31,18 +31,18 @@ class DoctorCommandTest extends TestCase
 
     public function test_passes_with_valid_default_config(): void
     {
-        $exitCode = Artisan::call('drifguard:doctor');
+        $exitCode = Artisan::call('driftguard:doctor');
 
         $this->assertSame(0, $exitCode);
     }
 
     public function test_fails_on_malformed_field(): void
     {
-        config(['drifguard.fields' => [
+        config(['driftguard.fields' => [
             ['name' => 'x', 'type' => 'tipo_invalido', 'llm_instructions' => '...'],
         ]]);
 
-        $exitCode = Artisan::call('drifguard:doctor');
+        $exitCode = Artisan::call('driftguard:doctor');
 
         $this->assertSame(1, $exitCode);
         $this->assertStringContainsString('inválido', Artisan::output());
@@ -50,24 +50,24 @@ class DoctorCommandTest extends TestCase
 
     public function test_fails_on_nonexistent_models_path(): void
     {
-        config(['drifguard.models_path' => '/caminho/que/definitivamente/nao/existe']);
+        config(['driftguard.models_path' => '/caminho/que/definitivamente/nao/existe']);
 
-        $exitCode = Artisan::call('drifguard:doctor');
+        $exitCode = Artisan::call('driftguard:doctor');
 
         $this->assertSame(1, $exitCode);
     }
 
     public function test_fails_on_scope_class_field_with_invalid_namespace(): void
     {
-        $scopePath = sys_get_temp_dir() . '/drifguard_doctor_scopes_' . uniqid();
+        $scopePath = sys_get_temp_dir() . '/driftguard_doctor_scopes_' . uniqid();
 
-        config(['drifguard.fields' => [
+        config(['driftguard.fields' => [
             ['name' => 'escopo', 'type' => 'scope_class', 'llm_instructions' => '...'],
         ]]);
-        config(['drifguard.scope_class_namespace' => 'nao_e_namespace_valido']);
-        config(['drifguard.scope_class_path' => $scopePath]);
+        config(['driftguard.scope_class_namespace' => 'nao_e_namespace_valido']);
+        config(['driftguard.scope_class_path' => $scopePath]);
 
-        $exitCode = Artisan::call('drifguard:doctor');
+        $exitCode = Artisan::call('driftguard:doctor');
 
         $this->assertSame(1, $exitCode);
         $this->assertStringContainsString('namespace inválido', Artisan::output());
@@ -81,12 +81,12 @@ class DoctorCommandTest extends TestCase
      */
     public function test_fails_on_duplicate_field_name(): void
     {
-        config(['drifguard.fields' => [
+        config(['driftguard.fields' => [
             ['name' => 'escopo_projeto', 'type' => 'string', 'llm_instructions' => 'a'],
             ['name' => 'escopo_projeto', 'type' => 'string', 'llm_instructions' => 'b'],
         ]]);
 
-        $exitCode = Artisan::call('drifguard:doctor');
+        $exitCode = Artisan::call('driftguard:doctor');
 
         $this->assertSame(1, $exitCode);
         $this->assertStringContainsString('duplicado', Artisan::output());

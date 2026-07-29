@@ -1,6 +1,6 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Tests\Fixtures\Models;
+namespace Saviogodinho2002\DriftGuard\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Model;
 

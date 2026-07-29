@@ -1,10 +1,10 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Tests\Unit;
+namespace Saviogodinho2002\DriftGuard\Tests\Unit;
 
-use Saviogodinho2002\Drifguard\Support\ConfigWriter;
-use Saviogodinho2002\Drifguard\Support\FieldSpec;
-use Saviogodinho2002\Drifguard\Tests\TestCase;
+use Saviogodinho2002\DriftGuard\Support\ConfigWriter;
+use Saviogodinho2002\DriftGuard\Support\FieldSpec;
+use Saviogodinho2002\DriftGuard\Tests\TestCase;
 
 class ConfigWriterTest extends TestCase
 {
@@ -15,7 +15,7 @@ class ConfigWriterTest extends TestCase
     {
         parent::setUp();
         $this->writer  = new ConfigWriter();
-        $this->tmpFile = sys_get_temp_dir() . '/drifguard_test_' . uniqid() . '.php';
+        $this->tmpFile = sys_get_temp_dir() . '/driftguard_test_' . uniqid() . '.php';
     }
 
     protected function tearDown(): void

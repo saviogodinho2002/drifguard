@@ -1,5 +1,5 @@
 {
-    "name": "saviogodinho2002/drifguard",
+    "name": "saviogodinho2002/driftguard",
     "description": "Keeps a curated PHP config catalog of your Eloquent models in sync with the real code, using an LLM-assisted analyze/apply workflow (git-diff-based change detection, reflection-first structural facts, human-in-the-loop review before writing).",
     "type": "library",
     "license": "MIT",
@@ -23,18 +23,18 @@
     },
     "autoload": {
         "psr-4": {
-            "Saviogodinho2002\\Drifguard\\": "src/"
+            "Saviogodinho2002\\DriftGuard\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Saviogodinho2002\\Drifguard\\Tests\\": "tests/"
+            "Saviogodinho2002\\DriftGuard\\Tests\\": "tests/"
         }
     },
     "extra": {
         "laravel": {
             "providers": [
-                "Saviogodinho2002\\Drifguard\\DrifguardServiceProvider"
+                "Saviogodinho2002\\DriftGuard\\DriftGuardServiceProvider"
             ]
         }
     },

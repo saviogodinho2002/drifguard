@@ -1,14 +1,14 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Console;
+namespace Saviogodinho2002\DriftGuard\Console;
 
 use Illuminate\Console\Command;
-use Saviogodinho2002\Drifguard\Support\FieldSpec;
+use Saviogodinho2002\DriftGuard\Support\FieldSpec;
 
-/** Introspecção (regra E): lista os FieldSpec ativos sem precisar ler config/drifguard.php na unha. */
+/** Introspecção (regra E): lista os FieldSpec ativos sem precisar ler config/driftguard.php na unha. */
 class FieldsCommand extends Command
 {
-    protected $signature = 'drifguard:fields {--json : Saída em JSON em vez de tabela}';
+    protected $signature = 'driftguard:fields {--json : Saída em JSON em vez de tabela}';
 
     protected $description = 'Lista os campos extras (FieldSpec) configurados no catálogo';
 
@@ -16,7 +16,7 @@ class FieldsCommand extends Command
     {
         $fieldSpecs = array_map(
             fn($spec) => $spec instanceof FieldSpec ? $spec : FieldSpec::fromArray($spec),
-            config('drifguard.fields', [])
+            config('driftguard.fields', [])
         );
 
         $linhas = array_map(fn(FieldSpec $s) => [
@@ -33,7 +33,7 @@ class FieldsCommand extends Command
         }
 
         if (empty($linhas)) {
-            $this->info("Nenhum campo extra configurado em config('drifguard.fields').");
+            $this->info("Nenhum campo extra configurado em config('driftguard.fields').");
             return self::SUCCESS;
         }
 

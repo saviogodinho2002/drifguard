@@ -1,19 +1,19 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Console;
+namespace Saviogodinho2002\DriftGuard\Console;
 
 use Illuminate\Console\Command;
-use Saviogodinho2002\Drifguard\ModelSyncService;
+use Saviogodinho2002\DriftGuard\ModelSyncService;
 
 /**
  * Responde a última pergunta pendente (`ask_question`) de um model sem precisar editar
  * questions.md à mão — pensado pra um agente de IA rodando o fluxo de forma autônoma. Fecha o modo
- * `rerun`: a próxima `drifguard:analyze` sem --model/--force inclui esse model automaticamente,
+ * `rerun`: a próxima `driftguard:analyze` sem --model/--force inclui esse model automaticamente,
  * com a resposta injetada no contexto da nova análise.
  */
 class AnswerCommand extends Command
 {
-    protected $signature = 'drifguard:answer
+    protected $signature = 'driftguard:answer
                             {model : Nome do model com pergunta pendente}
                             {resposta* : Texto da resposta (várias palavras, sem precisar de aspas)}';
 
@@ -37,7 +37,7 @@ class AnswerCommand extends Command
         }
 
         $this->info("✓ Resposta registrada para '{$modelo}': {$resultado['question']}");
-        $this->line('Rode `php artisan drifguard:analyze` pra reanalisar com essa resposta incorporada.');
+        $this->line('Rode `php artisan driftguard:analyze` pra reanalisar com essa resposta incorporada.');
 
         return self::SUCCESS;
     }

@@ -1,20 +1,20 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Console;
+namespace Saviogodinho2002\DriftGuard\Console;
 
 use Illuminate\Console\Command;
-use Saviogodinho2002\Drifguard\ModelSyncService;
+use Saviogodinho2002\DriftGuard\ModelSyncService;
 
 /**
  * Estabelece um baseline em context.json (last_commit_hash = HEAD atual) SEM chamar o LLM — pra
  * quem só quer marcar "a partir de agora, reanalise o que mudar" sem pagar o custo de rodar
- * drifguard:analyze --force contra todos os models só pra fazer o arquivo existir. Nunca
+ * driftguard:analyze --force contra todos os models só pra fazer o arquivo existir. Nunca
  * sobrescreve um context.json já existente sem --force, pra não perder pending_questions/
  * scope_hashes já acumulados numa baseline anterior.
  */
 class InitCommand extends Command
 {
-    protected $signature = 'drifguard:init
+    protected $signature = 'driftguard:init
                             {--force : Sobrescreve context.json já existente}
                             {--json : Saída em JSON em vez de texto}';
 
@@ -52,7 +52,7 @@ class InitCommand extends Command
         }
 
         $this->info("✓ Baseline criado em {$path} (last_commit_hash={$hash}).");
-        $this->line('A próxima `drifguard:analyze` (sem --force) só reanalisa o que mudar a partir de agora.');
+        $this->line('A próxima `driftguard:analyze` (sem --force) só reanalisa o que mudar a partir de agora.');
 
         return self::SUCCESS;
     }

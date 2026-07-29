@@ -1,9 +1,9 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Tests\Unit;
+namespace Saviogodinho2002\DriftGuard\Tests\Unit;
 
-use Saviogodinho2002\Drifguard\Support\ModelDiscovery;
-use Saviogodinho2002\Drifguard\Tests\TestCase;
+use Saviogodinho2002\DriftGuard\Support\ModelDiscovery;
+use Saviogodinho2002\DriftGuard\Tests\TestCase;
 
 class ModelDiscoveryTest extends TestCase
 {
@@ -13,7 +13,7 @@ class ModelDiscoveryTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tmpDir = sys_get_temp_dir() . '/drifguard_discovery_' . uniqid();
+        $this->tmpDir = sys_get_temp_dir() . '/driftguard_discovery_' . uniqid();
         mkdir($this->tmpDir, 0755, true);
         $this->discovery = new ModelDiscovery(
             modelsPath: $this->tmpDir,

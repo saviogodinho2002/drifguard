@@ -1,13 +1,13 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Console;
+namespace Saviogodinho2002\DriftGuard\Console;
 
 use Illuminate\Console\Command;
-use Saviogodinho2002\Drifguard\ModelSyncService;
+use Saviogodinho2002\DriftGuard\ModelSyncService;
 
 class AnalyzeModelsCommand extends Command
 {
-    protected $signature = 'drifguard:analyze
+    protected $signature = 'driftguard:analyze
                             {--force : Reanalisar todos os models independente de git diff}
                             {--model=* : Limitar análise a model(s) específico(s)}
                             {--dry-run : Mostra modo/models/prévia sem chamar o LLM}
@@ -129,9 +129,9 @@ class AnalyzeModelsCommand extends Command
         }
         if (!empty($questions)) {
             $this->warn(count($questions) . ' dúvida(s) pendente(s) em: ' . $service->storagePath('questions.md'));
-            $this->line('Responda via `php artisan drifguard:answer {model} {resposta}` ou editando o arquivo acima.');
+            $this->line('Responda via `php artisan driftguard:answer {model} {resposta}` ou editando o arquivo acima.');
         } else {
-            $this->info('Pronto para aplicar: php artisan drifguard:apply --dry-run');
+            $this->info('Pronto para aplicar: php artisan driftguard:apply --dry-run');
         }
 
         return self::SUCCESS;

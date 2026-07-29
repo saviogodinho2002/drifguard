@@ -1,12 +1,12 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Tests\Console;
+namespace Saviogodinho2002\DriftGuard\Tests\Console;
 
 use Illuminate\Support\Facades\Artisan;
-use Saviogodinho2002\Drifguard\Contracts\AnalysisClient;
-use Saviogodinho2002\Drifguard\ModelSyncService;
-use Saviogodinho2002\Drifguard\Tests\Fixtures\FakeAnalysisClient;
-use Saviogodinho2002\Drifguard\Tests\TestCase;
+use Saviogodinho2002\DriftGuard\Contracts\AnalysisClient;
+use Saviogodinho2002\DriftGuard\ModelSyncService;
+use Saviogodinho2002\DriftGuard\Tests\Fixtures\FakeAnalysisClient;
+use Saviogodinho2002\DriftGuard\Tests\TestCase;
 
 class AnswerCommandTest extends TestCase
 {
@@ -15,13 +15,13 @@ class AnswerCommandTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tmpStorage = sys_get_temp_dir() . '/drifguard_answer_storage_' . uniqid();
+        $this->tmpStorage = sys_get_temp_dir() . '/driftguard_answer_storage_' . uniqid();
 
-        config(['drifguard.model_namespace'  => 'Saviogodinho2002\\Drifguard\\Tests\\Fixtures\\Models']);
-        config(['drifguard.models_path'      => $this->fixturesPath('Models')]);
-        config(['drifguard.supporting_paths' => []]);
-        config(['drifguard.storage_path'     => $this->tmpStorage]);
-        config(['drifguard.fields'           => []]);
+        config(['driftguard.model_namespace'  => 'Saviogodinho2002\\DriftGuard\\Tests\\Fixtures\\Models']);
+        config(['driftguard.models_path'      => $this->fixturesPath('Models')]);
+        config(['driftguard.supporting_paths' => []]);
+        config(['driftguard.storage_path'     => $this->tmpStorage]);
+        config(['driftguard.fields'           => []]);
     }
 
     protected function tearDown(): void
@@ -41,7 +41,7 @@ class AnswerCommandTest extends TestCase
         $service->runAnalysis(['Post'], fn() => null);
         $this->assertEmpty($service->modelsAwaitingRerun());
 
-        $exitCode = Artisan::call('drifguard:answer', ['model' => 'Post', 'resposta' => ['Sim,', 'é', 'obrigatório.']]);
+        $exitCode = Artisan::call('driftguard:answer', ['model' => 'Post', 'resposta' => ['Sim,', 'é', 'obrigatório.']]);
 
         $this->assertSame(0, $exitCode);
         $this->assertSame(['Post'], $service->modelsAwaitingRerun());
@@ -50,14 +50,14 @@ class AnswerCommandTest extends TestCase
 
     public function test_returns_failure_when_no_pending_question_for_model(): void
     {
-        $exitCode = Artisan::call('drifguard:answer', ['model' => 'Post', 'resposta' => ['qualquer', 'coisa']]);
+        $exitCode = Artisan::call('driftguard:answer', ['model' => 'Post', 'resposta' => ['qualquer', 'coisa']]);
 
         $this->assertSame(1, $exitCode);
     }
 
     public function test_rejects_empty_answer(): void
     {
-        $exitCode = Artisan::call('drifguard:answer', ['model' => 'Post', 'resposta' => ['   ']]);
+        $exitCode = Artisan::call('driftguard:answer', ['model' => 'Post', 'resposta' => ['   ']]);
 
         $this->assertSame(1, $exitCode);
     }

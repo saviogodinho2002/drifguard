@@ -1,6 +1,6 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Support;
+namespace Saviogodinho2002\DriftGuard\Support;
 
 /**
  * Resolve documentos de regra de negócio (.md) que o app-host aponta pra complementar a análise de
@@ -10,8 +10,8 @@ namespace Saviogodinho2002\Drifguard\Support;
  * reflection, mesmo que o doc diga outra coisa).
  *
  * Suporta 2 formas de apontar, combináveis:
- * (a) mapeamento explícito: config('drifguard.context_docs.map') = ['Despesa' => 'docs/regras/despesa.md']
- * (b) convenção por nome: config('drifguard.context_docs.convention_path') = 'docs/regras/{model}.md'
+ * (a) mapeamento explícito: config('driftguard.context_docs.map') = ['Despesa' => 'docs/regras/despesa.md']
+ * (b) convenção por nome: config('driftguard.context_docs.convention_path') = 'docs/regras/{model}.md'
  *     — se o arquivo existir pro model em questão, é incluído automaticamente, sem precisar listar.
  */
 class ContextDocsResolver

@@ -1,6 +1,6 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Support;
+namespace Saviogodinho2002\DriftGuard\Support;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;

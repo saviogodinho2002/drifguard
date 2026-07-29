@@ -1,8 +1,8 @@
-# Drifguard
+# DriftGuard
 
-[![Latest Version](https://img.shields.io/packagist/v/saviogodinho2002/drifguard.svg)](https://packagist.org/packages/saviogodinho2002/drifguard)
-[![License](https://img.shields.io/packagist/l/saviogodinho2002/drifguard.svg)](LICENSE)
-[![PHP Version](https://img.shields.io/packagist/php-v/saviogodinho2002/drifguard.svg)](composer.json)
+[![Latest Version](https://img.shields.io/packagist/v/saviogodinho2002/driftguard.svg)](https://packagist.org/packages/saviogodinho2002/driftguard)
+[![License](https://img.shields.io/packagist/l/saviogodinho2002/driftguard.svg)](LICENSE)
+[![PHP Version](https://img.shields.io/packagist/php-v/saviogodinho2002/driftguard.svg)](composer.json)
 
 Mantém um catálogo PHP curado dos seus models Eloquent sincronizado com o código real, usando um
 LLM (configurável) num fluxo analyze → revisar → apply. Detecção de mudança via `git diff`,
@@ -12,54 +12,54 @@ humana antes de qualquer escrita.
 ## Por quê
 
 Documentar model manualmente desatualiza. Deixar uma IA reescrever tudo sem revisão arrisca perder
-curadoria manual. Drifguard concilia os dois: fatos estruturais (tabela, campos, relações) sempre
+curadoria manual. DriftGuard concilia os dois: fatos estruturais (tabela, campos, relações) sempre
 vêm de reflection — nunca da IA; conhecimento de negócio (descrição, notas, e qualquer campo extra
 que você definir) é proposto pela IA mas **nunca aplicado sem você revisar o diff antes**.
 
 ## Instalação
 
 ```bash
-composer require saviogodinho2002/drifguard
-php artisan vendor:publish --tag=drifguard-config
+composer require saviogodinho2002/driftguard
+php artisan vendor:publish --tag=driftguard-config
 ```
 
 Configure `OPENROUTER_API_KEY` no seu `.env` (o cliente padrão usa OpenRouter + um model Claude —
-troque em `config/drifguard.php` ou faça bind de outra implementação de `Contracts\AnalysisClient`
+troque em `config/driftguard.php` ou faça bind de outra implementação de `Contracts\AnalysisClient`
 no seu próprio `ServiceProvider` se quiser outro provedor).
 
 ## Uso
 
 ```bash
-php artisan drifguard:doctor           # valida a config inteira (sem chamar o LLM) — rode primeiro
-php artisan drifguard:analyze --dry-run  # mostra modo/models/prévia, sem chamar o LLM
-php artisan drifguard:analyze          # analisa o que mudou desde a última rodada (git diff)
-php artisan drifguard:analyze --force  # reanalisa tudo
-php artisan drifguard:apply --dry-run  # mostra o diff sem aplicar
-php artisan drifguard:apply            # aplica (pede confirmação)
+php artisan driftguard:doctor           # valida a config inteira (sem chamar o LLM) — rode primeiro
+php artisan driftguard:analyze --dry-run  # mostra modo/models/prévia, sem chamar o LLM
+php artisan driftguard:analyze          # analisa o que mudou desde a última rodada (git diff)
+php artisan driftguard:analyze --force  # reanalisa tudo
+php artisan driftguard:apply --dry-run  # mostra o diff sem aplicar
+php artisan driftguard:apply            # aplica (pede confirmação)
 ```
 
 Se você já analisou tudo por fora (ou só quer marcar "a partir de agora, reanalise o que mudar")
 sem pagar o custo de rodar `--force` contra todos os models de novo:
 
 ```bash
-php artisan drifguard:init             # grava context.json com o HEAD atual, sem chamar o LLM
-php artisan drifguard:init --force     # sobrescreve um context.json existente (cuidado: perde
+php artisan driftguard:init             # grava context.json com o HEAD atual, sem chamar o LLM
+php artisan driftguard:init --force     # sobrescreve um context.json existente (cuidado: perde
                                         # pending_questions/scope_hashes já acumulados nele)
 ```
 
 Perguntas pendentes (`ask_question`) — responda sem editar `questions.md` à mão:
 
 ```bash
-php artisan drifguard:answer Post Sim, published_at nulo sempre significa rascunho.
-php artisan drifguard:analyze          # próxima rodada já inclui Post com a resposta no contexto
+php artisan driftguard:answer Post Sim, published_at nulo sempre significa rascunho.
+php artisan driftguard:analyze          # próxima rodada já inclui Post com a resposta no contexto
 ```
 
 Introspecção (sem chamar o LLM):
 
 ```bash
-php artisan drifguard:fields                 # lista os campos extras (FieldSpec) configurados
-php artisan drifguard:context:list           # mostra qual doc de contexto seria usado por model
-php artisan drifguard:context:list --model=Post
+php artisan driftguard:fields                 # lista os campos extras (FieldSpec) configurados
+php artisan driftguard:context:list           # mostra qual doc de contexto seria usado por model
+php artisan driftguard:context:list --model=Post
 ```
 
 ### Uso por um agente de IA (CLI headless)
@@ -67,19 +67,19 @@ php artisan drifguard:context:list --model=Post
 Todo command aceita `--json` (saída estruturada em vez de tabela/cores):
 
 ```bash
-php artisan drifguard:analyze --dry-run --json    # prévia sem custo, parseável
-php artisan drifguard:analyze --json              # roda e devolve {mode, models, proposals, questions}
-php artisan drifguard:apply --json --dry-run       # {status: "dry_run", diff: [...]}
-php artisan drifguard:apply --json --force         # aplica sem prompt interativo, {status: "applied", ...}
+php artisan driftguard:analyze --dry-run --json    # prévia sem custo, parseável
+php artisan driftguard:analyze --json              # roda e devolve {mode, models, proposals, questions}
+php artisan driftguard:apply --json --dry-run       # {status: "dry_run", diff: [...]}
+php artisan driftguard:apply --json --force         # aplica sem prompt interativo, {status: "applied", ...}
 ```
 
-`drifguard:apply --json` **sem** `--force` nunca aplica — devolve `{status: "confirmation_required", diff}`
+`driftguard:apply --json` **sem** `--force` nunca aplica — devolve `{status: "confirmation_required", diff}`
 e sai com código de erro, pra uma execução headless nunca gravar mudança por engano só por ter
 esquecido `--dry-run`.
 
 ## Customizando pro seu domínio
 
-Tudo em `config/drifguard.php`, publicado no seu próprio projeto — edite livremente:
+Tudo em `config/driftguard.php`, publicado no seu próprio projeto — edite livremente:
 
 - **`fields`** — campos extras do seu domínio (além da base `descricao`/`notas`/`tabela`/`campos`/`relacoes`
   que o pacote já cobre). Tipos: `string`, `enum`, `array`, ou `scope_class` (gera um arquivo `.php`
@@ -93,7 +93,7 @@ Tudo em `config/drifguard.php`, publicado no seu próprio projeto — edite livr
   ],
 
   // ou fluente (com autocomplete, valida no momento da construção)
-  use Saviogodinho2002\Drifguard\Support\FieldSpec;
+  use Saviogodinho2002\DriftGuard\Support\FieldSpec;
 
   'fields' => [
       FieldSpec::string('gatilhos')->instructions('termos de busca'),
@@ -102,12 +102,12 @@ Tudo em `config/drifguard.php`, publicado no seu próprio projeto — edite livr
   ],
   ```
 
-  Rode `php artisan drifguard:doctor` depois de editar — valida cada `FieldSpec` (e os demais paths
+  Rode `php artisan driftguard:doctor` depois de editar — valida cada `FieldSpec` (e os demais paths
   da config) sem chamar o LLM, apontando exatamente qual entrada está malformada.
 
 - **`context_docs`** — aponte arquivos `.md` com regra de negócio que não dá pra inferir só lendo o
   código (motivo histórico, decisão de produto). Entra como contexto extra pra IA, nunca substitui
-  o que reflection já determina. Veja o que está resolvido com `drifguard:context:list`.
+  o que reflection já determina. Veja o que está resolvido com `driftguard:context:list`.
 - **`extra_prompt_rules`** — meta-instrução de formato/convenção específica do seu app (não é
   conhecimento de negócio por model — isso é `context_docs`).
 - **`max_snippet_chars`** — teto de tamanho pra um arquivo de apoio (controller/service) sem método
@@ -116,11 +116,11 @@ Tudo em `config/drifguard.php`, publicado no seu próprio projeto — edite livr
   truncado.
 - **`allowed_base_path`** — diretório fora do qual a IA não pode ler arquivo via `request_file`
   durante a análise (default: raiz do projeto).
-- **`storage_path`** — default `base_path('drifguard')` (raiz do projeto), **de propósito fora de
+- **`storage_path`** — default `base_path('driftguard')` (raiz do projeto), **de propósito fora de
   `storage/`** — `context.json` guarda `last_commit_hash` e perguntas pendentes/respondidas; se
   ficar de fora do git (`storage/` é ignorado por padrão no Laravel), cada dev/agente vê um estado
   local diferente, sem saber o que outro já analisou ou respondeu. Se realmente quiser esse arquivo
-  fora do git, aponte pra `storage_path('app/drifguard')` e adicione ao seu `.gitignore` você mesmo.
+  fora do git, aponte pra `storage_path('app/driftguard')` e adicione ao seu `.gitignore` você mesmo.
 - **`discovery_paths`/`model_namespace`/`output_path`** — todos os caminhos usados são
   configuráveis, nada fixo em `app/Models`.
 
@@ -167,14 +167,14 @@ FieldSpec::scopeClass('escopo_tenant')->instructions(
 ## Perguntas pendentes e o modo `rerun`
 
 Quando a IA usa `ask_question` em vez de propor uma atualização, o model fica pendente até alguém
-responder — `php artisan drifguard:answer {model} {resposta}` (sem precisar editar `questions.md`).
-A próxima `drifguard:analyze` (sem `--force`/`--model`) detecta automaticamente qualquer model com
+responder — `php artisan driftguard:answer {model} {resposta}` (sem precisar editar `questions.md`).
+A próxima `driftguard:analyze` (sem `--force`/`--model`) detecta automaticamente qualquer model com
 pergunta respondida e o inclui na rodada — a resposta anterior entra no prompt como contexto humano
 autoritativo, ao lado de `context_docs`.
 
 ## Segurança
 
-- Nada é escrito sem um passo de `--dry-run`/confirmação (`drifguard:apply`).
+- Nada é escrito sem um passo de `--dry-run`/confirmação (`driftguard:apply`).
 - Campo do tipo `scope_class` roda checagem sintática (`php -l`) antes de gravar qualquer classe —
   nunca deixa um arquivo PHP quebrado no disco.
 - Se um arquivo de classe gerado foi editado à mão desde a última geração, a próxima rodada detecta

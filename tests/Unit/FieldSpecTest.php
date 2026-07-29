@@ -1,10 +1,10 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Tests\Unit;
+namespace Saviogodinho2002\DriftGuard\Tests\Unit;
 
 use InvalidArgumentException;
-use Saviogodinho2002\Drifguard\Support\FieldSpec;
-use Saviogodinho2002\Drifguard\Tests\TestCase;
+use Saviogodinho2002\DriftGuard\Support\FieldSpec;
+use Saviogodinho2002\DriftGuard\Tests\TestCase;
 
 class FieldSpecTest extends TestCase
 {

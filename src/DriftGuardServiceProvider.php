@@ -1,35 +1,35 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard;
+namespace Saviogodinho2002\DriftGuard;
 
 use Illuminate\Support\ServiceProvider;
-use Saviogodinho2002\Drifguard\Clients\OpenRouterAnalysisClient;
-use Saviogodinho2002\Drifguard\Console\AnalyzeModelsCommand;
-use Saviogodinho2002\Drifguard\Console\AnswerCommand;
-use Saviogodinho2002\Drifguard\Console\ApplyModelsCommand;
-use Saviogodinho2002\Drifguard\Console\ContextListCommand;
-use Saviogodinho2002\Drifguard\Console\DoctorCommand;
-use Saviogodinho2002\Drifguard\Console\FieldsCommand;
-use Saviogodinho2002\Drifguard\Console\InitCommand;
-use Saviogodinho2002\Drifguard\Contracts\AnalysisClient;
-use Saviogodinho2002\Drifguard\Support\ConfigWriter;
-use Saviogodinho2002\Drifguard\Support\ContextDocsResolver;
-use Saviogodinho2002\Drifguard\Support\FieldSpec;
-use Saviogodinho2002\Drifguard\Support\ModelDiscovery;
-use Saviogodinho2002\Drifguard\Support\ModelReflector;
-use Saviogodinho2002\Drifguard\Support\ScopeClassWriter;
+use Saviogodinho2002\DriftGuard\Clients\OpenRouterAnalysisClient;
+use Saviogodinho2002\DriftGuard\Console\AnalyzeModelsCommand;
+use Saviogodinho2002\DriftGuard\Console\AnswerCommand;
+use Saviogodinho2002\DriftGuard\Console\ApplyModelsCommand;
+use Saviogodinho2002\DriftGuard\Console\ContextListCommand;
+use Saviogodinho2002\DriftGuard\Console\DoctorCommand;
+use Saviogodinho2002\DriftGuard\Console\FieldsCommand;
+use Saviogodinho2002\DriftGuard\Console\InitCommand;
+use Saviogodinho2002\DriftGuard\Contracts\AnalysisClient;
+use Saviogodinho2002\DriftGuard\Support\ConfigWriter;
+use Saviogodinho2002\DriftGuard\Support\ContextDocsResolver;
+use Saviogodinho2002\DriftGuard\Support\FieldSpec;
+use Saviogodinho2002\DriftGuard\Support\ModelDiscovery;
+use Saviogodinho2002\DriftGuard\Support\ModelReflector;
+use Saviogodinho2002\DriftGuard\Support\ScopeClassWriter;
 
-class DrifguardServiceProvider extends ServiceProvider
+class DriftGuardServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->mergeConfigFrom(__DIR__ . '/../config/drifguard.php', 'drifguard');
+        $this->mergeConfigFrom(__DIR__ . '/../config/driftguard.php', 'driftguard');
 
         // Binding padrão do cliente de análise — um app-host pode sobrescrever isso no PRÓPRIO
         // ServiceProvider (bind depois do nosso, ou via config de prioridade de provider) se quiser
         // trocar de implementação sem tocar neste pacote.
         $this->app->bind(AnalysisClient::class, function ($app) {
-            $config = $app['config']->get('drifguard.llm', []);
+            $config = $app['config']->get('driftguard.llm', []);
             $apiKey = env($config['api_key_env'] ?? 'OPENROUTER_API_KEY', '');
 
             return new OpenRouterAnalysisClient(
@@ -41,7 +41,7 @@ class DrifguardServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(ModelSyncService::class, function ($app) {
-            $config = $app['config']->get('drifguard', []);
+            $config = $app['config']->get('driftguard', []);
 
             $discovery = new ModelDiscovery(
                 modelsPath: $config['models_path'],
@@ -59,7 +59,7 @@ class DrifguardServiceProvider extends ServiceProvider
             );
 
             // Aceita FieldSpec já construído (factories fluentes) OU array cru (fromArray) na mesma
-            // lista — dá pra misturar os dois estilos em config('drifguard.fields').
+            // lista — dá pra misturar os dois estilos em config('driftguard.fields').
             $fieldSpecs = array_map(
                 fn($spec) => $spec instanceof FieldSpec ? $spec : FieldSpec::fromArray($spec),
                 $config['fields'] ?? []
@@ -106,8 +106,8 @@ class DrifguardServiceProvider extends ServiceProvider
             ]);
 
             $this->publishes([
-                __DIR__ . '/../config/drifguard.php' => config_path('drifguard.php'),
-            ], 'drifguard-config');
+                __DIR__ . '/../config/driftguard.php' => config_path('driftguard.php'),
+            ], 'driftguard-config');
         }
     }
 

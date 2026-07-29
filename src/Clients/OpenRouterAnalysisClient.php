@@ -1,9 +1,9 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Clients;
+namespace Saviogodinho2002\DriftGuard\Clients;
 
 use GuzzleHttp\Client;
-use Saviogodinho2002\Drifguard\Contracts\AnalysisClient;
+use Saviogodinho2002\DriftGuard\Contracts\AnalysisClient;
 
 /**
  * Implementação padrão de AnalysisClient — OpenRouter, pré-configurada com um slug Claude, mas

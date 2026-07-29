@@ -1,24 +1,24 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Console;
+namespace Saviogodinho2002\DriftGuard\Console;
 
 use Illuminate\Console\Command;
 use InvalidArgumentException;
-use Saviogodinho2002\Drifguard\Support\FieldSpec;
+use Saviogodinho2002\DriftGuard\Support\FieldSpec;
 
 /**
- * Valida config('drifguard.*') sem chamar o LLM (regra A) — pra pegar campo malformado, path
- * inexistente/não-gravável ou chave de API ausente ANTES de rodar drifguard:analyze de verdade.
+ * Valida config('driftguard.*') sem chamar o LLM (regra A) — pra pegar campo malformado, path
+ * inexistente/não-gravável ou chave de API ausente ANTES de rodar driftguard:analyze de verdade.
  */
 class DoctorCommand extends Command
 {
-    protected $signature = 'drifguard:doctor';
+    protected $signature = 'driftguard:doctor';
 
-    protected $description = 'Valida a config do drifguard (fields, paths, chave de API) sem chamar o LLM';
+    protected $description = 'Valida a config do driftguard (fields, paths, chave de API) sem chamar o LLM';
 
     public function handle(): int
     {
-        $config  = config('drifguard', []);
+        $config  = config('driftguard', []);
         $checks  = [];
         $falhou  = false;
 
@@ -98,7 +98,7 @@ class DoctorCommand extends Command
         if (env($apiKeyEnv)) {
             $checks[] = ['PASS', "env:{$apiKeyEnv}", 'definida'];
         } else {
-            $checks[] = ['WARN', "env:{$apiKeyEnv}", 'não definida — drifguard:analyze vai falhar até configurar'];
+            $checks[] = ['WARN', "env:{$apiKeyEnv}", 'não definida — driftguard:analyze vai falhar até configurar'];
         }
 
         $this->table(['Status', 'Item', 'Detalhe'], $checks);

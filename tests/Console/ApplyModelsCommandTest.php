@@ -1,11 +1,11 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Tests\Console;
+namespace Saviogodinho2002\DriftGuard\Tests\Console;
 
 use Illuminate\Support\Facades\Artisan;
-use Saviogodinho2002\Drifguard\Contracts\AnalysisClient;
-use Saviogodinho2002\Drifguard\Tests\Fixtures\FakeAnalysisClient;
-use Saviogodinho2002\Drifguard\Tests\TestCase;
+use Saviogodinho2002\DriftGuard\Contracts\AnalysisClient;
+use Saviogodinho2002\DriftGuard\Tests\Fixtures\FakeAnalysisClient;
+use Saviogodinho2002\DriftGuard\Tests\TestCase;
 
 class ApplyModelsCommandTest extends TestCase
 {
@@ -15,15 +15,15 @@ class ApplyModelsCommandTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tmpOutputConfig = sys_get_temp_dir() . '/drifguard_apply_models_' . uniqid() . '.php';
-        $this->tmpStorage      = sys_get_temp_dir() . '/drifguard_apply_storage_' . uniqid();
+        $this->tmpOutputConfig = sys_get_temp_dir() . '/driftguard_apply_models_' . uniqid() . '.php';
+        $this->tmpStorage      = sys_get_temp_dir() . '/driftguard_apply_storage_' . uniqid();
 
-        config(['drifguard.model_namespace' => 'Saviogodinho2002\\Drifguard\\Tests\\Fixtures\\Models']);
-        config(['drifguard.models_path'     => $this->fixturesPath('Models')]);
-        config(['drifguard.supporting_paths' => []]);
-        config(['drifguard.output_path'     => $this->tmpOutputConfig]);
-        config(['drifguard.storage_path'    => $this->tmpStorage]);
-        config(['drifguard.fields'          => []]);
+        config(['driftguard.model_namespace' => 'Saviogodinho2002\\DriftGuard\\Tests\\Fixtures\\Models']);
+        config(['driftguard.models_path'     => $this->fixturesPath('Models')]);
+        config(['driftguard.supporting_paths' => []]);
+        config(['driftguard.output_path'     => $this->tmpOutputConfig]);
+        config(['driftguard.storage_path'    => $this->tmpStorage]);
+        config(['driftguard.fields'          => []]);
     }
 
     protected function tearDown(): void
@@ -38,7 +38,7 @@ class ApplyModelsCommandTest extends TestCase
     {
         $fake = (new FakeAnalysisClient())->enqueueProposeUpdate(['descricao' => 'Post de blog.', 'notas' => 'x']);
         $this->app->bind(AnalysisClient::class, fn() => $fake);
-        Artisan::call('drifguard:analyze', ['--model' => ['Post']]);
+        Artisan::call('driftguard:analyze', ['--model' => ['Post']]);
     }
 
     /** Regra B: --json sem --force não aplica silenciosamente — exige confirmação explícita. */
@@ -46,7 +46,7 @@ class ApplyModelsCommandTest extends TestCase
     {
         $this->gerarProposta();
 
-        $exitCode = Artisan::call('drifguard:apply', ['--json' => true]);
+        $exitCode = Artisan::call('driftguard:apply', ['--json' => true]);
         $decoded  = json_decode(Artisan::output(), true);
 
         $this->assertSame(1, $exitCode);
@@ -58,7 +58,7 @@ class ApplyModelsCommandTest extends TestCase
     {
         $this->gerarProposta();
 
-        Artisan::call('drifguard:apply', ['--json' => true, '--dry-run' => true]);
+        Artisan::call('driftguard:apply', ['--json' => true, '--dry-run' => true]);
         $decoded = json_decode(Artisan::output(), true);
 
         $this->assertSame('dry_run', $decoded['status']);
@@ -70,7 +70,7 @@ class ApplyModelsCommandTest extends TestCase
     {
         $this->gerarProposta();
 
-        $exitCode = Artisan::call('drifguard:apply', ['--json' => true, '--force' => true]);
+        $exitCode = Artisan::call('driftguard:apply', ['--json' => true, '--force' => true]);
         $decoded  = json_decode(Artisan::output(), true);
 
         $this->assertSame(0, $exitCode);

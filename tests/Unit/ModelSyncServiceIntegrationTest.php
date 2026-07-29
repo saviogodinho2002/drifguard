@@ -1,16 +1,16 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Tests\Unit;
+namespace Saviogodinho2002\DriftGuard\Tests\Unit;
 
-use Saviogodinho2002\Drifguard\ModelSyncService;
-use Saviogodinho2002\Drifguard\Support\ConfigWriter;
-use Saviogodinho2002\Drifguard\Support\ContextDocsResolver;
-use Saviogodinho2002\Drifguard\Support\FieldSpec;
-use Saviogodinho2002\Drifguard\Support\ModelDiscovery;
-use Saviogodinho2002\Drifguard\Support\ModelReflector;
-use Saviogodinho2002\Drifguard\Support\ScopeClassWriter;
-use Saviogodinho2002\Drifguard\Tests\Fixtures\FakeAnalysisClient;
-use Saviogodinho2002\Drifguard\Tests\TestCase;
+use Saviogodinho2002\DriftGuard\ModelSyncService;
+use Saviogodinho2002\DriftGuard\Support\ConfigWriter;
+use Saviogodinho2002\DriftGuard\Support\ContextDocsResolver;
+use Saviogodinho2002\DriftGuard\Support\FieldSpec;
+use Saviogodinho2002\DriftGuard\Support\ModelDiscovery;
+use Saviogodinho2002\DriftGuard\Support\ModelReflector;
+use Saviogodinho2002\DriftGuard\Support\ScopeClassWriter;
+use Saviogodinho2002\DriftGuard\Tests\Fixtures\FakeAnalysisClient;
+use Saviogodinho2002\DriftGuard\Tests\TestCase;
 
 /**
  * Fim-a-fim contra um domínio de fixture genérico (blog: Author/Post) — prova que o pacote produz
@@ -25,8 +25,8 @@ class ModelSyncServiceIntegrationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tmpStorage      = sys_get_temp_dir() . '/drifguard_storage_' . uniqid();
-        $this->tmpOutputConfig = sys_get_temp_dir() . '/drifguard_models_' . uniqid() . '.php';
+        $this->tmpStorage      = sys_get_temp_dir() . '/driftguard_storage_' . uniqid();
+        $this->tmpOutputConfig = sys_get_temp_dir() . '/driftguard_models_' . uniqid() . '.php';
     }
 
     protected function tearDown(): void
@@ -49,10 +49,10 @@ class ModelSyncServiceIntegrationTest extends TestCase
             client: $client,
             discovery: new ModelDiscovery(
                 modelsPath: __DIR__ . '/../Fixtures/Models',
-                modelNamespace: 'Saviogodinho2002\\Drifguard\\Tests\\Fixtures\\Models',
+                modelNamespace: 'Saviogodinho2002\\DriftGuard\\Tests\\Fixtures\\Models',
                 supportingPaths: $supportingPaths,
             ),
-            reflector: new ModelReflector(modelNamespace: 'Saviogodinho2002\\Drifguard\\Tests\\Fixtures\\Models'),
+            reflector: new ModelReflector(modelNamespace: 'Saviogodinho2002\\DriftGuard\\Tests\\Fixtures\\Models'),
             contextDocs: new ContextDocsResolver(basePath: __DIR__),
             configWriter: new ConfigWriter(),
             scopeClassWriter: $scopeClassWriter,
@@ -113,7 +113,7 @@ class ModelSyncServiceIntegrationTest extends TestCase
 
     /**
      * Item C: fecha o gap de paridade com o `rerun` mode original — responder uma pergunta pendente
-     * via `answerQuestion()` (o que `drifguard:answer` chama) precisa: (1) marcar o model pra
+     * via `answerQuestion()` (o que `driftguard:answer` chama) precisa: (1) marcar o model pra
      * reanálise em `resolveRunState()`, e (2) alimentar o par pergunta/resposta na próxima análise.
      */
     public function test_answered_question_triggers_rerun_mode_and_feeds_context_into_next_analysis(): void
@@ -147,7 +147,7 @@ class ModelSyncServiceIntegrationTest extends TestCase
     /** Item F: path fora do allowedBasePath é recusado explicitamente — nunca lido às cegas. */
     public function test_request_file_outside_allowed_base_path_is_refused_not_read(): void
     {
-        $tmpSecreto = tempnam(sys_get_temp_dir(), 'drifguard_secreto_');
+        $tmpSecreto = tempnam(sys_get_temp_dir(), 'driftguard_secreto_');
         file_put_contents($tmpSecreto, 'SEGREDO_NAO_DEVE_VAZAR');
 
         $client = (new FakeAnalysisClient())
@@ -203,7 +203,7 @@ class ModelSyncServiceIntegrationTest extends TestCase
      */
     public function test_scope_class_field_gets_one_correction_retry_then_accepts(): void
     {
-        $scopeDir = sys_get_temp_dir() . '/drifguard_scope_test_' . uniqid();
+        $scopeDir = sys_get_temp_dir() . '/driftguard_scope_test_' . uniqid();
         mkdir($scopeDir, 0755, true);
 
         $corpoRuim = '$builder->whereRaw(\'1 = 0\'); return $builder;';
@@ -216,7 +216,7 @@ class ModelSyncServiceIntegrationTest extends TestCase
         $service = $this->makeService(
             $client,
             fieldSpecs: [FieldSpec::scopeClass('escopo_tenant')->instructions('restrinja ao autor')],
-            scopeClassWriter: new ScopeClassWriter(outputPath: $scopeDir, namespace: 'App\\Drifguard\\Scopes'),
+            scopeClassWriter: new ScopeClassWriter(outputPath: $scopeDir, namespace: 'App\\DriftGuard\\Scopes'),
         );
 
         $result = $service->runAnalysis(['Post'], fn() => null);
@@ -241,7 +241,7 @@ class ModelSyncServiceIntegrationTest extends TestCase
      */
     public function test_scope_class_field_still_invalid_after_retry_returns_proposal_without_looping_forever(): void
     {
-        $scopeDir = sys_get_temp_dir() . '/drifguard_scope_test_' . uniqid();
+        $scopeDir = sys_get_temp_dir() . '/driftguard_scope_test_' . uniqid();
         mkdir($scopeDir, 0755, true);
 
         $corpoRuim = '$builder->whereRaw(\'1 = 0\'); return $builder;';
@@ -253,7 +253,7 @@ class ModelSyncServiceIntegrationTest extends TestCase
         $service = $this->makeService(
             $client,
             fieldSpecs: [FieldSpec::scopeClass('escopo_tenant')->instructions('restrinja ao autor')],
-            scopeClassWriter: new ScopeClassWriter(outputPath: $scopeDir, namespace: 'App\\Drifguard\\Scopes'),
+            scopeClassWriter: new ScopeClassWriter(outputPath: $scopeDir, namespace: 'App\\DriftGuard\\Scopes'),
         );
 
         $result = $service->runAnalysis(['Post'], fn() => null);

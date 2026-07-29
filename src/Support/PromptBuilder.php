@@ -1,10 +1,10 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Support;
+namespace Saviogodinho2002\DriftGuard\Support;
 
 /**
  * Monta o prompt do sistema e o array de tools (formato tool-calling) a partir da mecânica
- * genérica do pacote + config('drifguard.fields') do app-host + regras extras opcionais. Nenhuma
+ * genérica do pacote + config('driftguard.fields') do app-host + regras extras opcionais. Nenhuma
  * regra de negócio de projeto nenhum vive aqui — só a mecânica (prioridade de reflection,
  * disciplina notas-vs-campo-resumo, uso de request_file/ask_question).
  */
@@ -156,7 +156,7 @@ class PromptBuilder
      * @param array{path: string, content: string}|null $contextDoc
      * @param array{tabela: string, campos: string, relacoes: string} $reflectedMetadata
      * @param array{question: string, answer: string}|null $respostaAnterior Pergunta feita numa
-     *        rodada anterior (`ask_question`) e já respondida por um humano via `drifguard:answer` —
+     *        rodada anterior (`ask_question`) e já respondida por um humano via `driftguard:answer` —
      *        entra como contexto humano/autoritativo sobre intenção, igual $contextDoc, nunca
      *        sobrescreve fato estrutural.
      * @return array<int, array{role: string, content: string}>

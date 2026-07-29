@@ -1,15 +1,15 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard;
+namespace Saviogodinho2002\DriftGuard;
 
-use Saviogodinho2002\Drifguard\Contracts\AnalysisClient;
-use Saviogodinho2002\Drifguard\Support\ConfigWriter;
-use Saviogodinho2002\Drifguard\Support\ContextDocsResolver;
-use Saviogodinho2002\Drifguard\Support\FieldSpec;
-use Saviogodinho2002\Drifguard\Support\ModelDiscovery;
-use Saviogodinho2002\Drifguard\Support\ModelReflector;
-use Saviogodinho2002\Drifguard\Support\PromptBuilder;
-use Saviogodinho2002\Drifguard\Support\ScopeClassWriter;
+use Saviogodinho2002\DriftGuard\Contracts\AnalysisClient;
+use Saviogodinho2002\DriftGuard\Support\ConfigWriter;
+use Saviogodinho2002\DriftGuard\Support\ContextDocsResolver;
+use Saviogodinho2002\DriftGuard\Support\FieldSpec;
+use Saviogodinho2002\DriftGuard\Support\ModelDiscovery;
+use Saviogodinho2002\DriftGuard\Support\ModelReflector;
+use Saviogodinho2002\DriftGuard\Support\PromptBuilder;
+use Saviogodinho2002\DriftGuard\Support\ScopeClassWriter;
 
 /**
  * Orquestra o fluxo completo: descoberta -> reflection -> prompt -> chamada ao LLM (loop de
@@ -402,7 +402,7 @@ class ModelSyncService
 
     /**
      * Marca a última pergunta não-respondida de $modelo como respondida — usado por
-     * `drifguard:answer`, alternativa a editar `questions.md` à mão.
+     * `driftguard:answer`, alternativa a editar `questions.md` à mão.
      *
      * @return array{found: bool, question: ?string}
      */
@@ -430,7 +430,7 @@ class ModelSyncService
         return ['found' => true, 'question' => $lista[$indice]['question']];
     }
 
-    /** @return string[] Models com pergunta respondida (via drifguard:answer) mas ainda não reanalisados. */
+    /** @return string[] Models com pergunta respondida (via driftguard:answer) mas ainda não reanalisados. */
     public function modelsAwaitingRerun(): array
     {
         $ctx    = $this->readContext();

@@ -1,9 +1,9 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Tests\Unit;
+namespace Saviogodinho2002\DriftGuard\Tests\Unit;
 
-use Saviogodinho2002\Drifguard\Support\ScopeClassWriter;
-use Saviogodinho2002\Drifguard\Tests\TestCase;
+use Saviogodinho2002\DriftGuard\Support\ScopeClassWriter;
+use Saviogodinho2002\DriftGuard\Tests\TestCase;
 
 class ScopeClassWriterTest extends TestCase
 {
@@ -13,9 +13,9 @@ class ScopeClassWriterTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tmpDir = sys_get_temp_dir() . '/drifguard_scopes_' . uniqid();
+        $this->tmpDir = sys_get_temp_dir() . '/driftguard_scopes_' . uniqid();
         mkdir($this->tmpDir, 0755, true);
-        $this->writer = new ScopeClassWriter(outputPath: $this->tmpDir, namespace: 'App\\Drifguard\\Scopes');
+        $this->writer = new ScopeClassWriter(outputPath: $this->tmpDir, namespace: 'App\\DriftGuard\\Scopes');
     }
 
     protected function tearDown(): void

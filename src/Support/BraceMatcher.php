@@ -1,6 +1,6 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Support;
+namespace Saviogodinho2002\DriftGuard\Support;
 
 /**
  * Casamento de chaves balanceado ({}) — usado sempre que é preciso extrair um bloco cujo tamanho

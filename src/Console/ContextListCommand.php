@@ -1,9 +1,9 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Console;
+namespace Saviogodinho2002\DriftGuard\Console;
 
 use Illuminate\Console\Command;
-use Saviogodinho2002\Drifguard\ModelSyncService;
+use Saviogodinho2002\DriftGuard\ModelSyncService;
 
 /**
  * Introspecção (regra E): pra cada model, mostra se ContextDocsResolver acha algum doc de negócio
@@ -12,7 +12,7 @@ use Saviogodinho2002\Drifguard\ModelSyncService;
  */
 class ContextListCommand extends Command
 {
-    protected $signature = 'drifguard:context:list
+    protected $signature = 'driftguard:context:list
                             {--model=* : Restringe a model(s) específico(s)}
                             {--json : Saída em JSON em vez de tabela}';
 

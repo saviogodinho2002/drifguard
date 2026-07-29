@@ -1,6 +1,6 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Support;
+namespace Saviogodinho2002\DriftGuard\Support;
 
 use Illuminate\Support\Str;
 
@@ -199,7 +199,7 @@ class ScopeClassWriter
             return null;
         }
 
-        $tmp = tempnam(sys_get_temp_dir(), 'drifguard_scope_');
+        $tmp = tempnam(sys_get_temp_dir(), 'driftguard_scope_');
         file_put_contents($tmp, $conteudo);
 
         $saida  = [];
@@ -221,10 +221,10 @@ class ScopeClassWriter
         namespace {$namespace};
 
         use Illuminate\Database\Eloquent\Builder;
-        use Saviogodinho2002\Drifguard\Contracts\TenantScope;
+        use Saviogodinho2002\DriftGuard\Contracts\TenantScope;
 
         /**
-         * Gerado por drifguard a partir da análise do campo {$fieldName} do model {$modelo}. Editar
+         * Gerado por driftguard a partir da análise do campo {$fieldName} do model {$modelo}. Editar
          * manualmente é seguro — a próxima geração detecta a mudança (hash do conteúdo) e pede
          * confirmação antes de sobrescrever, nunca substitui uma edição manual às cegas.
          */

@@ -1,18 +1,18 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Console;
+namespace Saviogodinho2002\DriftGuard\Console;
 
 use Illuminate\Console\Command;
-use Saviogodinho2002\Drifguard\ModelSyncService;
+use Saviogodinho2002\DriftGuard\ModelSyncService;
 
 class ApplyModelsCommand extends Command
 {
-    protected $signature = 'drifguard:apply
+    protected $signature = 'driftguard:apply
                             {--dry-run : Mostra o diff sem aplicar}
                             {--force : Aplica sem pedir confirmação}
                             {--json : Saída em JSON em vez de tabela (exige --force junto, a menos que --dry-run)}';
 
-    protected $description = 'Aplica a proposta gerada por drifguard:analyze no catálogo de saída';
+    protected $description = 'Aplica a proposta gerada por driftguard:analyze no catálogo de saída';
 
     public function handle(ModelSyncService $service): int
     {
@@ -25,7 +25,7 @@ class ApplyModelsCommand extends Command
             if ($json) {
                 $this->line(json_encode(['status' => 'no_proposal']));
             } else {
-                $this->info('Nenhuma proposta pendente. Rode drifguard:analyze primeiro.');
+                $this->info('Nenhuma proposta pendente. Rode driftguard:analyze primeiro.');
             }
             return self::SUCCESS;
         }

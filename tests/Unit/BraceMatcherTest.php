@@ -1,9 +1,9 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Tests\Unit;
+namespace Saviogodinho2002\DriftGuard\Tests\Unit;
 
-use Saviogodinho2002\Drifguard\Support\BraceMatcher;
-use Saviogodinho2002\Drifguard\Tests\TestCase;
+use Saviogodinho2002\DriftGuard\Support\BraceMatcher;
+use Saviogodinho2002\DriftGuard\Tests\TestCase;
 
 class BraceMatcherTest extends TestCase
 {

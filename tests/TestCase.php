@@ -1,15 +1,15 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Tests;
+namespace Saviogodinho2002\DriftGuard\Tests;
 
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
-use Saviogodinho2002\Drifguard\DrifguardServiceProvider;
+use Saviogodinho2002\DriftGuard\DriftGuardServiceProvider;
 
 abstract class TestCase extends OrchestraTestCase
 {
     protected function getPackageProviders($app): array
     {
-        return [DrifguardServiceProvider::class];
+        return [DriftGuardServiceProvider::class];
     }
 
     protected function fixturesPath(string $path = ''): string

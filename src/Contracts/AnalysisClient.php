@@ -1,6 +1,6 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Contracts;
+namespace Saviogodinho2002\DriftGuard\Contracts;
 
 /**
  * Abstração sobre o provedor de LLM usado pra analisar um model e propor atualização de catálogo.

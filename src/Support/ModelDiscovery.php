@@ -1,12 +1,12 @@
 <?php
 
-namespace Saviogodinho2002\Drifguard\Support;
+namespace Saviogodinho2002\DriftGuard\Support;
 
 use Illuminate\Database\Eloquent\Model;
 
 /**
  * Descobre models Eloquent e arquivos relevantes (controllers/requests/services que os referenciam)
- * pra montar o contexto de código que vai pro LLM. Paths vêm 100% de config('drifguard.*') — nenhum
+ * pra montar o contexto de código que vai pro LLM. Paths vêm 100% de config('driftguard.*') — nenhum
  * caminho fixo tipo app/Models hardcoded, ao contrário da versão original de onde isso foi portado.
  */
 class ModelDiscovery
