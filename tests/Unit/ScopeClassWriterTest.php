@@ -27,11 +27,11 @@ class ScopeClassWriterTest extends TestCase
 
     public function test_writes_valid_class_first_time(): void
     {
-        $resultado = $this->writer->write('Post', 'return $query->where(\'author_id\', $context->id);', null);
+        $resultado = $this->writer->write('Post', 'escopo', 'return $query->where(\'author_id\', $context->id);', null);
 
         $this->assertSame('written', $resultado['status']);
         $this->assertFileExists($resultado['path']);
-        $this->assertStringContainsString('class PostScope implements TenantScope', file_get_contents($resultado['path']));
+        $this->assertStringContainsString('class PostEscopoScope implements TenantScope', file_get_contents($resultado['path']));
     }
 
     /** Gap #3 da revisão do plano: nunca grava PHP que não parseia. */
@@ -39,10 +39,45 @@ class ScopeClassWriterTest extends TestCase
     {
         // referencia $query (passa a checagem semântica) mas é sintaticamente inválido — isola o
         // gate de sintaxe do gate semântico (novo), que roda ANTES.
-        $resultado = $this->writer->write('Post', "return \$query->where('a', {{{", null);
+        $resultado = $this->writer->write('Post', 'escopo', "return \$query->where('a', {{{", null);
 
         $this->assertSame('syntax_error', $resultado['status']);
-        $this->assertFileDoesNotExist($this->writer->classPathFor('Post'));
+        $this->assertFileDoesNotExist($this->writer->classPathFor('Post', 'escopo'));
+    }
+
+    // ── Colisão entre 2 fields scope_class no mesmo model (relatório real de produção) ─
+
+    /**
+     * Achado real de produção: `escopo_projeto` + `escopo_membro` no mesmo model calculavam o
+     * MESMO path/FQCN (`ContractScope`) antes dessa correção — o 2º field sobrescrevia o arquivo
+     * que o 1º tinha acabado de escrever, sem erro, sem aviso. `classNameFor`/`classPathFor`
+     * incluem o nome do field precisamente pra isso nunca mais acontecer.
+     */
+    public function test_two_scope_class_fields_on_same_model_never_collide(): void
+    {
+        $corpoProjeto = "if (\$context->hasRole(['Master'])) {\n    return \$query;\n}\nreturn \$query->where('coordinator_id', \$context->coordinator->id);";
+        $corpoMembro  = "return \$query->whereHas('projectUser', fn(\$q) => \$q->where('user_id', \$context->id));";
+
+        $resultadoProjeto = $this->writer->write('Contract', 'escopo_projeto', $corpoProjeto, null);
+        $resultadoMembro  = $this->writer->write('Contract', 'escopo_membro', $corpoMembro, null);
+
+        $this->assertSame('written', $resultadoProjeto['status']);
+        $this->assertSame('written', $resultadoMembro['status']);
+
+        // paths e FQCNs diferentes — a raiz do bug era os 2 caírem no mesmo arquivo
+        $this->assertNotSame($resultadoProjeto['path'], $resultadoMembro['path']);
+        $this->assertNotSame(
+            $this->writer->fqcnFor('Contract', 'escopo_projeto'),
+            $this->writer->fqcnFor('Contract', 'escopo_membro'),
+        );
+
+        // e o conteúdo de cada arquivo continua intacto — nada foi sobrescrito
+        $conteudoProjeto = file_get_contents($resultadoProjeto['path']);
+        $conteudoMembro  = file_get_contents($resultadoMembro['path']);
+        $this->assertStringContainsString('coordinator_id', $conteudoProjeto);
+        $this->assertStringNotContainsString('coordinator_id', $conteudoMembro);
+        $this->assertStringContainsString('projectUser', $conteudoMembro);
+        $this->assertStringNotContainsString('projectUser', $conteudoProjeto);
     }
 
     // ── Sanitização de formato (achado do relatório real de produção) ─────────
@@ -82,16 +117,16 @@ class ScopeClassWriterTest extends TestCase
         // $builder->whereRaw(...) é 100% válido sintaticamente — só está semanticamente errado
         // (o parâmetro real do apply() é $query, não $builder). Referencia $query também, pra
         // isolar especificamente o gate de "nome de variável errado" do gate de "nunca usa $query".
-        $resultado = $this->writer->write('Post', 'if ($builder) { } return $query;', null);
+        $resultado = $this->writer->write('Post', 'escopo', 'if ($builder) { } return $query;', null);
 
         $this->assertSame('semantic_check_failed', $resultado['status']);
         $this->assertStringContainsString('builder', $resultado['message']);
-        $this->assertFileDoesNotExist($this->writer->classPathFor('Post'));
+        $this->assertFileDoesNotExist($this->writer->classPathFor('Post', 'escopo'));
     }
 
     public function test_semantic_check_rejects_body_that_never_mentions_query_specifically(): void
     {
-        $resultado = $this->writer->write('Post', 'doSomethingUnrelated();', null);
+        $resultado = $this->writer->write('Post', 'escopo', 'doSomethingUnrelated();', null);
 
         $this->assertSame('semantic_check_failed', $resultado['status']);
         $this->assertStringContainsString('$query', $resultado['message']);
@@ -101,6 +136,7 @@ class ScopeClassWriterTest extends TestCase
     {
         $resultado = $this->writer->write(
             'Post',
+            'escopo',
             '$context = auth()->user(); return $query->where(\'coordinator_id\', $context->id);',
             null,
         );
@@ -148,10 +184,10 @@ class ScopeClassWriterTest extends TestCase
         ```
         RAW;
 
-        $resultado = $this->writer->write('Acquisition', $bruto, null);
+        $resultado = $this->writer->write('Acquisition', 'escopo_projeto', $bruto, null);
 
         $this->assertSame('semantic_check_failed', $resultado['status']);
-        $this->assertFileDoesNotExist($this->writer->classPathFor('Acquisition'));
+        $this->assertFileDoesNotExist($this->writer->classPathFor('Acquisition', 'escopo_projeto'));
         $this->assertStringContainsString('Acquisition', $resultado['message']);
         $this->assertSame(mb_substr($bruto, 0, 300), $resultado['raw_body_preview']);
     }
@@ -166,19 +202,19 @@ class ScopeClassWriterTest extends TestCase
         $erro = $this->writer->validar('$builder->whereRaw(\'1 = 0\'); return $builder;');
 
         $this->assertNotNull($erro);
-        $this->assertFileDoesNotExist($this->writer->classPathFor('ValidacaoTemp'));
+        $this->assertFileDoesNotExist($this->writer->classPathFor('ValidacaoTemp', 'campo'));
     }
 
     /** Gap #2 da revisão do plano: arquivo editado à mão não pode ser sobrescrito silenciosamente. */
     public function test_detects_manual_edit_and_skips_overwrite(): void
     {
-        $primeiro = $this->writer->write('Post', 'return $query;', null);
+        $primeiro = $this->writer->write('Post', 'escopo', 'return $query;', null);
         $this->assertSame('written', $primeiro['status']);
 
         // simula edição manual do dev no arquivo gerado
         file_put_contents($primeiro['path'], file_get_contents($primeiro['path']) . "\n// editado à mão\n");
 
-        $segundo = $this->writer->write('Post', 'return $query->where(\'x\', 1);', $primeiro['hash']);
+        $segundo = $this->writer->write('Post', 'escopo', 'return $query->where(\'x\', 1);', $primeiro['hash']);
 
         $this->assertSame('skipped_manual_edit', $segundo['status']);
         $this->assertStringContainsString('editado manualmente', $segundo['message']);
@@ -186,9 +222,9 @@ class ScopeClassWriterTest extends TestCase
 
     public function test_regenerates_when_hash_matches_last_generated(): void
     {
-        $primeiro = $this->writer->write('Post', 'return $query;', null);
+        $primeiro = $this->writer->write('Post', 'escopo', 'return $query;', null);
 
-        $segundo = $this->writer->write('Post', 'return $query->where(\'x\', 1);', $primeiro['hash']);
+        $segundo = $this->writer->write('Post', 'escopo', 'return $query->where(\'x\', 1);', $primeiro['hash']);
 
         $this->assertSame('written', $segundo['status']);
         $this->assertStringContainsString("where('x', 1)", file_get_contents($segundo['path']));

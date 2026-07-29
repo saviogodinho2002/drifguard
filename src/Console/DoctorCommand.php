@@ -33,6 +33,16 @@ class DoctorCommand extends Command
             }
         }
 
+        // Nome de field duplicado sobrescreve silenciosamente o anterior no schema de tool-calling
+        // (PromptBuilder::buildTools() monta $properties[$spec->name] = ... num array simples) —
+        // achado real ao investigar a colisão de scope_class no mesmo model, mas se aplica a
+        // qualquer tipo de field, não só scope_class.
+        $nomesFields = array_map(fn($s) => $s->name, $fieldSpecs);
+        foreach (array_filter(array_count_values($nomesFields), fn($qtd) => $qtd > 1) as $nome => $qtd) {
+            $checks[] = ['FAIL', 'fields', "nome '{$nome}' duplicado ({$qtd}x) — cada FieldSpec precisa de nome único: um nome repetido sobrescreve o anterior no schema de tool-calling, e (se for scope_class) colide no mesmo arquivo/classe gerado."];
+            $falhou = true;
+        }
+
         $modelsPath = $config['models_path'] ?? null;
         if ($modelsPath && is_dir($modelsPath)) {
             $checks[] = ['PASS', 'models_path', $modelsPath];

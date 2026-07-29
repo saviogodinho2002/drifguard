@@ -3,6 +3,27 @@
 Todas as mudanças notáveis deste projeto são documentadas aqui. Formato baseado em
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [0.3.1] - 2026-07-29
+
+Motivado por outro relatório real de produção: 2 fields `scope_class` no mesmo model
+(`escopo_projeto` + `escopo_membro` em `Contract`) geravam o MESMO arquivo/classe — o 2º field
+escrito sobrescrevia silenciosamente a lógica do 1º, sem erro, sem warning, sem confirmação.
+`config/models.php` ficava com as 2 chaves corretas na aparência, mas ambas apontando pro mesmo FQCN.
+
+### Fixed
+- **Breaking**: `ScopeClassWriter::classNameFor()`/`classPathFor()`/`fqcnFor()`/`write()` agora
+  incluem o nome do FIELD, não só do model — o nome da classe gerada passa de `{Model}Scope` pra
+  `{Model}{FieldStudly}Scope` (ex: `ContractEscopoMembroScope`), **mesmo pra quem só tem 1 field
+  `scope_class`** (sem colisão nenhuma) — pacote ainda é 0.x, mudança de nome aceitável via minor
+  bump. Se você já tem classes geradas sob o nome antigo: rode `drifguard:apply --force` depois de
+  atualizar pra regerar sob o nome novo, e apague manualmente o arquivo antigo órfão (o pacote não
+  deleta arquivo que ele não está escrevendo na rodada atual).
+
+### Added
+- `drifguard:doctor` detecta nome de `FieldSpec` duplicado em `config('drifguard.fields')` — antes
+  disso, um nome repetido já sobrescrevia silenciosamente o field anterior no schema de
+  tool-calling (`PromptBuilder::buildTools()`), independente de ser `scope_class` ou não.
+
 ## [0.3.0] - 2026-07-29
 
 Motivado por um relatório real de produção (segundo projeto externo): 13/45 (~29%) das gerações de

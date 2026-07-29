@@ -2,6 +2,8 @@
 
 namespace Saviogodinho2002\Drifguard\Support;
 
+use Illuminate\Support\Str;
+
 /**
  * Gera/atualiza o arquivo .php de uma classe de escopo (FieldSpec tipo scope_class) — nunca grava
  * uma string de código pra ser eval()'d depois. 3 guarda-corpos obrigatórios, nessa ordem (achados
@@ -100,34 +102,42 @@ class ScopeClassWriter
             return $erroSemantico;
         }
 
-        return $this->checarSintaxe($this->renderClass('ValidacaoTemp', $sanitizado));
-    }
-
-    public function classNameFor(string $modelo): string
-    {
-        return "{$modelo}Scope";
-    }
-
-    public function classPathFor(string $modelo): string
-    {
-        return rtrim($this->outputPath, '/') . '/' . $this->classNameFor($modelo) . '.php';
-    }
-
-    public function fqcnFor(string $modelo): string
-    {
-        return $this->namespace . '\\' . $this->classNameFor($modelo);
+        return $this->checarSintaxe($this->renderClass('ValidacaoTemp', 'campo', $sanitizado));
     }
 
     /**
+     * Inclui o nome do FIELD, não só do model — 2 fields scope_class no mesmo model (ex:
+     * escopo_projeto + escopo_membro em Contract) precisam gerar arquivos/classes DIFERENTES.
+     * Achado real de produção: quando o nome derivava só do model, o 2º field sobrescrevia
+     * silenciosamente o arquivo que o 1º tinha acabado de escrever — sem erro, sem aviso.
+     */
+    public function classNameFor(string $modelo, string $fieldName): string
+    {
+        return $modelo . Str::studly($fieldName) . 'Scope';
+    }
+
+    public function classPathFor(string $modelo, string $fieldName): string
+    {
+        return rtrim($this->outputPath, '/') . '/' . $this->classNameFor($modelo, $fieldName) . '.php';
+    }
+
+    public function fqcnFor(string $modelo, string $fieldName): string
+    {
+        return $this->namespace . '\\' . $this->classNameFor($modelo, $fieldName);
+    }
+
+    /**
+     * @param string $fieldName Nome do FieldSpec (tipo scope_class) que originou este corpo — entra
+     *        no nome da classe gerada, pra 2 fields no mesmo model nunca colidirem no mesmo arquivo.
      * @param string $methodBody Corpo do método apply() proposto pela IA (bruto — write() sanitiza
      *        antes de validar, nunca assume que já chegou limpo).
      * @param string|null $lastGeneratedHash Hash sha256 do conteúdo gerado da última vez (guardado
-     *        pelo chamador, ex: em context.json) — null quando é a 1ª geração pro model.
+     *        pelo chamador, ex: em context.json) — null quando é a 1ª geração pro model+field.
      * @return array{status: 'written'|'skipped_manual_edit'|'semantic_check_failed'|'syntax_error', message: ?string, hash: ?string, path: string, raw_body_preview: ?string}
      */
-    public function write(string $modelo, string $methodBody, ?string $lastGeneratedHash): array
+    public function write(string $modelo, string $fieldName, string $methodBody, ?string $lastGeneratedHash): array
     {
-        $path = $this->classPathFor($modelo);
+        $path = $this->classPathFor($modelo, $fieldName);
 
         if (is_file($path) && $lastGeneratedHash !== null) {
             $conteudoAtual = file_get_contents($path) ?: '';
@@ -155,7 +165,7 @@ class ScopeClassWriter
             ];
         }
 
-        $conteudo = $this->renderClass($modelo, $sanitizado);
+        $conteudo = $this->renderClass($modelo, $fieldName, $sanitizado);
 
         $erroSintaxe = $this->checarSintaxe($conteudo);
         if ($erroSintaxe !== null) {
@@ -200,9 +210,9 @@ class ScopeClassWriter
         return $codigo === 0 ? null : implode("\n", $saida);
     }
 
-    private function renderClass(string $modelo, string $methodBody): string
+    private function renderClass(string $modelo, string $fieldName, string $methodBody): string
     {
-        $className = $this->classNameFor($modelo);
+        $className = $this->classNameFor($modelo, $fieldName);
         $namespace = $this->namespace;
 
         return <<<PHP
@@ -214,9 +224,9 @@ class ScopeClassWriter
         use Saviogodinho2002\Drifguard\Contracts\TenantScope;
 
         /**
-         * Gerado por drifguard a partir da análise do model {$modelo}. Editar manualmente é seguro —
-         * a próxima geração detecta a mudança (hash do conteúdo) e pede confirmação antes de
-         * sobrescrever, nunca substitui uma edição manual às cegas.
+         * Gerado por drifguard a partir da análise do campo {$fieldName} do model {$modelo}. Editar
+         * manualmente é seguro — a próxima geração detecta a mudança (hash do conteúdo) e pede
+         * confirmação antes de sobrescrever, nunca substitui uma edição manual às cegas.
          */
         class {$className} implements TenantScope
         {

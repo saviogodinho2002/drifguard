@@ -74,4 +74,21 @@ class DoctorCommandTest extends TestCase
 
         @rmdir($scopePath);
     }
+
+    /**
+     * Achado ao investigar a colisão de scope_class no mesmo model: nome de field duplicado
+     * sobrescreve silenciosamente no schema de tool-calling — pega isso ANTES de analyze/apply.
+     */
+    public function test_fails_on_duplicate_field_name(): void
+    {
+        config(['drifguard.fields' => [
+            ['name' => 'escopo_projeto', 'type' => 'string', 'llm_instructions' => 'a'],
+            ['name' => 'escopo_projeto', 'type' => 'string', 'llm_instructions' => 'b'],
+        ]]);
+
+        $exitCode = Artisan::call('drifguard:doctor');
+
+        $this->assertSame(1, $exitCode);
+        $this->assertStringContainsString('duplicado', Artisan::output());
+    }
 }

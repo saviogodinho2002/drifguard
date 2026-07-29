@@ -533,13 +533,13 @@ class ModelSyncService
                 }
 
                 $hashAnterior = $ctx['scope_hashes'][$modelo][$spec->name] ?? null;
-                $resultado    = $this->scopeClassWriter->write($modelo, $entrada[$spec->name], $hashAnterior);
+                $resultado    = $this->scopeClassWriter->write($modelo, $spec->name, $entrada[$spec->name], $hashAnterior);
                 $resultado['model'] = $modelo;
                 $resultado['field'] = $spec->name;
                 $scopeResults[] = $resultado;
 
                 if ($resultado['status'] === 'written') {
-                    $proposalFinal[$modelo][$spec->name] = $this->scopeClassWriter->fqcnFor($modelo);
+                    $proposalFinal[$modelo][$spec->name] = $this->scopeClassWriter->fqcnFor($modelo, $spec->name);
                     $ctx['scope_hashes'][$modelo][$spec->name] = $resultado['hash'];
                 } else {
                     // não sobrescreve o valor de config existente quando pula/erra
