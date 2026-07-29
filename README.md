@@ -110,6 +110,46 @@ Tudo em `config/drifguard.php`, publicado no seu próprio projeto — edite livr
 - **`discovery_paths`/`model_namespace`/`output_path`/`storage_path`** — todos os caminhos usados
   são configuráveis, nada fixo em `app/Models`.
 
+## Multi-tenancy: escrevendo uma boa instrução pra `scope_class`
+
+`scope_class` é o field mais delicado de instruir bem, porque a resposta certa depende de *onde* a
+regra de tenant realmente mora no seu app — e isso varia. Dois princípios ajudam a escrever a
+instrução:
+
+**1. O que já está garantido no contexto, sem precisar pedir.**
+O arquivo do próprio model sempre entra inteiro (`gatherSnippets()` trata ele como fonte primária,
+nunca truncado) — então "olhe global scopes (`booted()`/`addGlobalScope`), scopes locais
+(`scopeXxx()`), e relações que já implicam tenant (`belongsTo(Empresa::class)`)" a IA já tem material
+pra fazer sozinha. Não precisa instruir isso, é estrutural.
+
+**2. O que não está garantido — e onde configurar, não instruir.**
+Arquivos de apoio só entram se estiverem em `supporting_paths` **e** referenciarem o model
+(`ModelDiscovery::supportingFilesForModel()`). Se a lógica de tenant mora num **middleware** (comum
+em apps multi-tenant — resolve o tenant antes de qualquer controller/model ser tocado), esse arquivo
+só entra no contexto se você adicionar o diretório de middlewares em `supporting_paths`. Isso é
+"onde procurar" — resolve-se na config, não pedindo pra IA adivinhar ou usar `request_file` às
+cegas.
+
+**Cuidado com "olhe o controller e replique".** Controller filtrando manualmente
+(`->where('empresa_id', $user->empresa_id)` espalhado em várias actions) é exatamente o anti-padrão
+que `scope_class` existe pra resolver — centralizar a regra numa classe só. Se a instrução mandar
+"replique o que o controller faz" e existirem 2-3 pontos de entrada (ex: API + painel admin +
+import em lote) filtrando de formas ligeiramente diferentes — cenário comum em apps multi-tenant
+que cresceram organicamente, não hipotético —, a IA vai escolher uma arbitrariamente. Instrua-a a preferir `ask_question` nesse caso, nunca inferir.
+
+Instrução recomendada como ponto de partida (adapte `Empresa`/`empresa_id` pro seu domínio):
+
+```php
+FieldSpec::scopeClass('escopo_tenant')->instructions(
+    'Regra de acesso multi-tenant deste model. Primeiro confira o próprio model: global scopes ' .
+    '(booted()/addGlobalScope), scopes locais, e relações que já implicam limite de tenant ' .
+    '(ex: belongsTo(Empresa::class)). Se a regra não estiver visível aí, NÃO infira a partir de ' .
+    'como um controller filtra manualmente — pode ser inconsistente entre pontos de entrada ' .
+    'diferentes. Use request_file pra pedir um middleware/trait específico só se souber o path ' .
+    'exato; senão, use ask_question.'
+),
+```
+
 ## Perguntas pendentes e o modo `rerun`
 
 Quando a IA usa `ask_question` em vez de propor uma atualização, o model fica pendente até alguém

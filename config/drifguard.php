@@ -80,9 +80,20 @@ return [
     |     [
     |         'name'             => 'escopo_tenant',
     |         'type'             => 'scope_class',
-    |         'llm_instructions' => 'Corpo do método apply(): restrinja $query ao tenant do usuário em $context. Retorne $query.',
+    |         'llm_instructions' => 'Regra de acesso multi-tenant deste model. Primeiro confira o próprio ' .
+    |             'model: global scopes (booted()/addGlobalScope), scopes locais, e relações que já ' .
+    |             'implicam limite de tenant (ex: belongsTo(Empresa::class)). Se a regra não estiver ' .
+    |             'visível aí, NÃO infira a partir de como um controller filtra manualmente — pode ser ' .
+    |             'inconsistente entre pontos de entrada diferentes. Use request_file só se souber o ' .
+    |             'path exato de um middleware/trait específico; senão, use ask_question.',
     |     ],
     | ],
+    |
+    | Nota sobre a instrução acima: o arquivo do PRÓPRIO model sempre entra inteiro no contexto (é a
+    | fonte primária, nunca precisa pedir isso na instrução). O que NÃO entra automaticamente é
+    | lógica de tenant que mora em middleware — se for o seu caso, adicione o diretório de
+    | middlewares em 'supporting_paths' abaixo (dado estrutural: onde procurar), em vez de tentar
+    | resolver isso só via instrução (que é sobre COMO julgar o que já está no contexto).
     */
     'fields' => [],
 
