@@ -1,5 +1,9 @@
 # Drifguard
 
+[![Latest Version](https://img.shields.io/packagist/v/saviogodinho2002/drifguard.svg)](https://packagist.org/packages/saviogodinho2002/drifguard)
+[![License](https://img.shields.io/packagist/l/saviogodinho2002/drifguard.svg)](LICENSE)
+[![PHP Version](https://img.shields.io/packagist/php-v/saviogodinho2002/drifguard.svg)](composer.json)
+
 Mantém um catálogo PHP curado dos seus models Eloquent sincronizado com o código real, usando um
 LLM (configurável) num fluxo analyze → revisar → apply. Detecção de mudança via `git diff`,
 extração estrutural sempre via **reflection real** (nunca por prosa da IA), e um passo de revisão
