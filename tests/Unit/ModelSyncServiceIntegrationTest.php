@@ -8,6 +8,7 @@ use Saviogodinho2002\Drifguard\Support\ContextDocsResolver;
 use Saviogodinho2002\Drifguard\Support\FieldSpec;
 use Saviogodinho2002\Drifguard\Support\ModelDiscovery;
 use Saviogodinho2002\Drifguard\Support\ModelReflector;
+use Saviogodinho2002\Drifguard\Support\ScopeClassWriter;
 use Saviogodinho2002\Drifguard\Tests\Fixtures\FakeAnalysisClient;
 use Saviogodinho2002\Drifguard\Tests\TestCase;
 
@@ -42,6 +43,7 @@ class ModelSyncServiceIntegrationTest extends TestCase
         array $supportingPaths = [],
         ?string $allowedBasePath = null,
         int $maxSnippetChars = 6000,
+        ?ScopeClassWriter $scopeClassWriter = null,
     ): ModelSyncService {
         return new ModelSyncService(
             client: $client,
@@ -53,7 +55,7 @@ class ModelSyncServiceIntegrationTest extends TestCase
             reflector: new ModelReflector(modelNamespace: 'Saviogodinho2002\\Drifguard\\Tests\\Fixtures\\Models'),
             contextDocs: new ContextDocsResolver(basePath: __DIR__),
             configWriter: new ConfigWriter(),
-            scopeClassWriter: null,
+            scopeClassWriter: $scopeClassWriter,
             fieldSpecs: $fieldSpecs,
             extraPromptRules: null,
             outputConfigPath: $this->tmpOutputConfig,
@@ -191,5 +193,75 @@ class ModelSyncServiceIntegrationTest extends TestCase
         }
 
         $this->assertStringContainsString('class Post extends Model', $conteudoTool);
+    }
+
+    /**
+     * Achado do relatório real de produção: campo scope_class mal formado (nomes de variável
+     * errados) recebe 1 chance de correção, com o erro específico + o contrato de formato
+     * devolvidos como mensagem `tool` — a IA corrige na 2ª chamada, sem precisar de uma rodada de
+     * análise inteira nova.
+     */
+    public function test_scope_class_field_gets_one_correction_retry_then_accepts(): void
+    {
+        $scopeDir = sys_get_temp_dir() . '/drifguard_scope_test_' . uniqid();
+        mkdir($scopeDir, 0755, true);
+
+        $corpoRuim = '$builder->whereRaw(\'1 = 0\'); return $builder;';
+        $corpoBom  = 'return $query->where(\'author_id\', $context->id);';
+
+        $client = (new FakeAnalysisClient())
+            ->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y', 'escopo_tenant' => $corpoRuim])
+            ->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y', 'escopo_tenant' => $corpoBom]);
+
+        $service = $this->makeService(
+            $client,
+            fieldSpecs: [FieldSpec::scopeClass('escopo_tenant')->instructions('restrinja ao autor')],
+            scopeClassWriter: new ScopeClassWriter(outputPath: $scopeDir, namespace: 'App\\Drifguard\\Scopes'),
+        );
+
+        $result = $service->runAnalysis(['Post'], fn() => null);
+
+        $this->assertCount(2, $client->mensagensRecebidas, 'esperava 1ª tentativa + 1 correção');
+        $this->assertSame($corpoBom, $result['proposals']['Post']['escopo_tenant']);
+
+        // a mensagem de correção explica o erro específico e reforça o contrato
+        $mensagemDeCorrecao = $client->mensagensRecebidas[1];
+        $ultimaTool         = array_values(array_filter($mensagemDeCorrecao, fn($m) => ($m['role'] ?? null) === 'tool'));
+        $this->assertNotEmpty($ultimaTool);
+        $this->assertStringContainsString('query', end($ultimaTool)['content']);
+
+        array_map('unlink', glob("{$scopeDir}/*.php") ?: []);
+        @rmdir($scopeDir);
+    }
+
+    /**
+     * Se a IA insistir no erro mesmo depois da correção, o loop não trava tentando de novo — só 1
+     * correção é permitida, e a proposta (ainda inválida) é devolvida como está. `apply()` continua
+     * sendo o backstop final que de fato rejeita, sem gravar nada de errado.
+     */
+    public function test_scope_class_field_still_invalid_after_retry_returns_proposal_without_looping_forever(): void
+    {
+        $scopeDir = sys_get_temp_dir() . '/drifguard_scope_test_' . uniqid();
+        mkdir($scopeDir, 0755, true);
+
+        $corpoRuim = '$builder->whereRaw(\'1 = 0\'); return $builder;';
+
+        $client = (new FakeAnalysisClient())
+            ->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y', 'escopo_tenant' => $corpoRuim])
+            ->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y', 'escopo_tenant' => $corpoRuim]);
+
+        $service = $this->makeService(
+            $client,
+            fieldSpecs: [FieldSpec::scopeClass('escopo_tenant')->instructions('restrinja ao autor')],
+            scopeClassWriter: new ScopeClassWriter(outputPath: $scopeDir, namespace: 'App\\Drifguard\\Scopes'),
+        );
+
+        $result = $service->runAnalysis(['Post'], fn() => null);
+
+        $this->assertCount(2, $client->mensagensRecebidas, 'não deve tentar uma 3ª vez');
+        $this->assertSame($corpoRuim, $result['proposals']['Post']['escopo_tenant']);
+
+        array_map('unlink', glob("{$scopeDir}/*.php") ?: []);
+        @rmdir($scopeDir);
     }
 }

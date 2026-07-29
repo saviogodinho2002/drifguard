@@ -30,8 +30,13 @@ return [
     |--------------------------------------------------------------------------
     | Storage interno (context.json / proposal.php / questions.md)
     |--------------------------------------------------------------------------
+    | Default é base_path('drifguard') — raiz do projeto, DE PROPÓSITO fora de storage/ (que o
+    | .gitignore padrão do Laravel exclui). context.json guarda last_commit_hash e perguntas
+    | pendentes/respondidas — se ficar de fora do git, cada dev/agente tem seu próprio estado local
+    | e nunca vê o que outro já analisou ou respondeu. Se quiser mesmo assim NÃO commitar isso,
+    | aponte pra storage_path('app/drifguard') e adicione ao seu .gitignore.
     */
-    'storage_path' => storage_path('app/drifguard'),
+    'storage_path' => base_path('drifguard'),
 
     /*
     |--------------------------------------------------------------------------

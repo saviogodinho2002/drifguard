@@ -3,6 +3,54 @@
 Todas as mudanças notáveis deste projeto são documentadas aqui. Formato baseado em
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [0.3.0] - 2026-07-29
+
+Motivado por um relatório real de produção (segundo projeto externo): 13/45 (~29%) das gerações de
+`scope_class` vinham em formato inválido — todas corretamente rejeitadas pelo `php -l` já existente
+(zero arquivo quebrado gravado), mas com taxa de rejeição alta demais pra ser prático.
+
+### Added
+- `ScopeClassWriter::sanitize()` — remove cerca de código markdown, `use` solto, e assinatura de
+  método reincluída de um corpo de `scope_class` proposto, antes de qualquer checagem.
+- **Checagem semântica nova** (`ScopeClassWriter`, roda sempre, depois de sanitizar): rejeita corpo
+  que não referencia `$query`, que usa `$builder`/`$model` (nomes errados observados no caso real),
+  ou que chama `auth()->user()`/`Auth::user()`/`request()->user()` direto em vez de usar `$context`.
+  **Importante**: sanitizar sozinho tornaria o caso real relatado sintaticamente válido (`php -l`
+  passaria) mas semanticamente quebrado — uma classe de escopo que compila mas não restringe nada,
+  vazamento cross-tenant silencioso. A checagem semântica fecha esse risco; novo status
+  `semantic_check_failed` (ao lado de `syntax_error`) reflete isso na API de `ScopeClassWriter::write()`.
+- Retry único em tempo de análise (`ModelSyncService::loopAnalise()`): se um campo `scope_class`
+  falhar sanitização+checagem semântica, a IA recebe o erro específico + o contrato de formato e
+  tem 1 chance de corrigir antes da proposta ser aceita — reaproveita o loop de tool-calling
+  existente, sem retry "frio" fora de contexto.
+- `FieldSpec::SCOPE_CLASS_FORMAT_CONTRACT` — contrato mecânico de formato reforçado tanto na
+  description da property de tool-calling quanto no system prompt (`PromptBuilder::regrasScopeClass()`).
+- Diagnóstico: erros de `scope_class` agora incluem o nome do model inline na mensagem e
+  `raw_body_preview` (conteúdo bruto truncado) no array de retorno — útil em `--json` pra triagem
+  em lote.
+- `Support\BraceMatcher` — casamento de chaves balanceado extraído de `ModelDiscovery` pra um
+  helper compartilhado (usado agora também pelo sanitizador de `scope_class`).
+- `drifguard:init` — estabelece o baseline de `context.json` (`last_commit_hash` = HEAD atual) sem
+  chamar o LLM, pra quem não quer pagar o custo de `drifguard:analyze --force` só pra fazer o
+  arquivo existir. Nunca sobrescreve um `context.json` já existente sem `--force`.
+
+### Changed
+- **`storage_path` default mudou de `storage_path('app/drifguard')` pra `base_path('drifguard')`**
+  — o `.gitignore` padrão do Laravel exclui `storage/`, então o default antigo deixava
+  `context.json` (last_commit_hash, perguntas pendentes/respondidas) fora do git: cada dev/agente
+  via um estado local diferente, sem saber o que outro já analisou ou respondeu. Bate agora com o
+  comportamento do sistema original de onde este pacote foi extraído (`base_path('ai-models-sync')`,
+  rastreado no git). Quem já está usando o pacote e quer manter o comportamento antigo pode apontar
+  `storage_path` de volta pra `storage_path('app/drifguard')` e adicionar ao próprio `.gitignore`.
+
+## [0.2.2] - 2026-07-29
+
+### Added
+- Documentação de como escrever uma boa `llm_instructions` pro tipo `scope_class` — o que já entra
+  de graça no contexto (arquivo do próprio model) vs o que precisa ir em `supporting_paths` (ex:
+  middleware de tenant) vs o risco de instruir "replique o que o controller faz" quando o
+  filtro é inconsistente entre pontos de entrada.
+
 ## [0.2.1] - 2026-07-29
 
 ### Added

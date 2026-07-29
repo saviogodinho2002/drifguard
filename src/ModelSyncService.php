@@ -188,6 +188,12 @@ class ModelSyncService
     /** @return array{proposal: ?array, questions: string[]} */
     private function loopAnalise(array $messages, array $tools, array &$snippets): array
     {
+        $camposEscopo = array_map(
+            fn($s) => $s->name,
+            array_values(array_filter($this->fieldSpecs, fn($s) => $s->type === FieldSpec::TYPE_SCOPE_CLASS))
+        );
+        $tentouCorrigirEscopo = false;
+
         for ($i = 0; $i < self::MAX_ANALYSIS_ITER; $i++) {
             $resposta  = $this->client->chat($messages, $tools);
             $toolCalls = $resposta['tool_calls'] ?? [];
@@ -201,6 +207,24 @@ class ModelSyncService
                 $args = json_decode($chamada['function']['arguments'] ?? '{}', true) ?? [];
 
                 if ($nome === 'propose_update') {
+                    if (!$tentouCorrigirEscopo && !empty($camposEscopo) && $this->scopeClassWriter !== null) {
+                        $erroEscopo = $this->erroDeEscopoEm($args, $camposEscopo);
+                        if ($erroEscopo !== null) {
+                            $tentouCorrigirEscopo = true;
+                            $messages[] = ['role' => 'assistant', 'content' => null, 'tool_calls' => $toolCalls];
+                            $messages[] = ['role' => 'tool', 'tool_call_id' => $chamada['id'] ?? '', 'content' => $erroEscopo];
+                            continue 2;
+                        }
+                    }
+
+                    // sanitiza formato (fences/assinatura/use) mesmo quando passou de primeira —
+                    // proposal.php e o diff de revisão mostram o corpo já limpo, não o bruto.
+                    foreach ($camposEscopo as $campo) {
+                        if (!empty($args[$campo]) && $this->scopeClassWriter !== null) {
+                            $args[$campo] = $this->scopeClassWriter->sanitize($args[$campo]);
+                        }
+                    }
+
                     return ['proposal' => $args, 'questions' => []];
                 }
 
@@ -219,6 +243,34 @@ class ModelSyncService
         }
 
         return ['proposal' => null, 'questions' => ['Análise excedeu o limite de iterações sem propor nem perguntar.']];
+    }
+
+    /**
+     * Valida os campos scope_class de uma proposta ANTES de aceitá-la — pega o mesmo tipo de erro
+     * que `ScopeClassWriter::write()` pegaria em `apply()`, mas em tempo de análise, com a conversa
+     * (mensagens/snippets) ainda disponível pra pedir 1 correção com contexto. Só 1 tentativa por
+     * model (`$tentouCorrigirEscopo` no chamador) — se ainda falhar depois, `apply()` continua
+     * sendo o backstop final (rejeita, não escreve, não corrompe nada).
+     *
+     * @param string[] $camposEscopo
+     * @return string|null Mensagem de correção pro 1º campo inválido encontrado, ou null se todos passarem.
+     */
+    private function erroDeEscopoEm(array $args, array $camposEscopo): ?string
+    {
+        foreach ($camposEscopo as $campo) {
+            if (empty($args[$campo])) {
+                continue;
+            }
+
+            $erro = $this->scopeClassWriter->validar($args[$campo]);
+            if ($erro !== null) {
+                return "O campo '{$campo}' não passou na validação (formato ou uso de variáveis): {$erro}\n"
+                    . FieldSpec::SCOPE_CLASS_FORMAT_CONTRACT
+                    . "\nChame propose_update de novo com o campo '{$campo}' corrigido.";
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -42,11 +42,35 @@ class PromptBuilder
         if ($regrasDeCampo !== '') {
             $partes[] = "Instruções por campo:\n{$regrasDeCampo}";
         }
+
+        $regrasScopeClass = $this->regrasScopeClass();
+        if ($regrasScopeClass !== '') {
+            $partes[] = $regrasScopeClass;
+        }
+
         if ($this->extraPromptRules) {
             $partes[] = $this->extraPromptRules;
         }
 
         return implode("\n\n", $partes);
+    }
+
+    /**
+     * Reforço de formato pro tipo scope_class, no nível do PACOTE — não depende do host reescrever
+     * isso na própria instrução. Mesmo texto de `FieldSpec::SCOPE_CLASS_FORMAT_CONTRACT`, entregue
+     * também aqui (redundância intencional, ver comentário na constante).
+     */
+    private function regrasScopeClass(): string
+    {
+        $camposScope = array_filter($this->fieldSpecs, fn($s) => $s->type === FieldSpec::TYPE_SCOPE_CLASS);
+        if (empty($camposScope)) {
+            return '';
+        }
+
+        $nomes = implode(', ', array_map(fn($s) => "`{$s->name}`", $camposScope));
+
+        return "Contrato OBRIGATÓRIO de formato pros campos do tipo scope_class ({$nomes}): "
+            . FieldSpec::SCOPE_CLASS_FORMAT_CONTRACT;
     }
 
     private function regrasPorCampo(): string

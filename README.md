@@ -38,6 +38,15 @@ php artisan drifguard:apply --dry-run  # mostra o diff sem aplicar
 php artisan drifguard:apply            # aplica (pede confirmação)
 ```
 
+Se você já analisou tudo por fora (ou só quer marcar "a partir de agora, reanalise o que mudar")
+sem pagar o custo de rodar `--force` contra todos os models de novo:
+
+```bash
+php artisan drifguard:init             # grava context.json com o HEAD atual, sem chamar o LLM
+php artisan drifguard:init --force     # sobrescreve um context.json existente (cuidado: perde
+                                        # pending_questions/scope_hashes já acumulados nele)
+```
+
 Perguntas pendentes (`ask_question`) — responda sem editar `questions.md` à mão:
 
 ```bash
@@ -107,8 +116,13 @@ Tudo em `config/drifguard.php`, publicado no seu próprio projeto — edite livr
   truncado.
 - **`allowed_base_path`** — diretório fora do qual a IA não pode ler arquivo via `request_file`
   durante a análise (default: raiz do projeto).
-- **`discovery_paths`/`model_namespace`/`output_path`/`storage_path`** — todos os caminhos usados
-  são configuráveis, nada fixo em `app/Models`.
+- **`storage_path`** — default `base_path('drifguard')` (raiz do projeto), **de propósito fora de
+  `storage/`** — `context.json` guarda `last_commit_hash` e perguntas pendentes/respondidas; se
+  ficar de fora do git (`storage/` é ignorado por padrão no Laravel), cada dev/agente vê um estado
+  local diferente, sem saber o que outro já analisou ou respondeu. Se realmente quiser esse arquivo
+  fora do git, aponte pra `storage_path('app/drifguard')` e adicione ao seu `.gitignore` você mesmo.
+- **`discovery_paths`/`model_namespace`/`output_path`** — todos os caminhos usados são
+  configuráveis, nada fixo em `app/Models`.
 
 ## Multi-tenancy: escrevendo uma boa instrução pra `scope_class`
 

@@ -10,6 +10,7 @@ use Saviogodinho2002\Drifguard\Console\ApplyModelsCommand;
 use Saviogodinho2002\Drifguard\Console\ContextListCommand;
 use Saviogodinho2002\Drifguard\Console\DoctorCommand;
 use Saviogodinho2002\Drifguard\Console\FieldsCommand;
+use Saviogodinho2002\Drifguard\Console\InitCommand;
 use Saviogodinho2002\Drifguard\Contracts\AnalysisClient;
 use Saviogodinho2002\Drifguard\Support\ConfigWriter;
 use Saviogodinho2002\Drifguard\Support\ContextDocsResolver;
@@ -98,6 +99,7 @@ class DrifguardServiceProvider extends ServiceProvider
                 AnalyzeModelsCommand::class,
                 ApplyModelsCommand::class,
                 DoctorCommand::class,
+                InitCommand::class,
                 AnswerCommand::class,
                 FieldsCommand::class,
                 ContextListCommand::class,

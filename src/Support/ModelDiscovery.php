@@ -93,7 +93,7 @@ class ModelDiscovery
         while (preg_match($padrao, $conteudo, $m, PREG_OFFSET_CAPTURE, $offset)) {
             $inicioAssinatura = $m[0][1];
             $posicaoChaveAbertura = $inicioAssinatura + strlen($m[0][0]) - 1;
-            $posicaoChaveFechamento = $this->casarChaveFechamento($conteudo, $posicaoChaveAbertura);
+            $posicaoChaveFechamento = BraceMatcher::fechamentoDe($conteudo, $posicaoChaveAbertura);
 
             if ($posicaoChaveFechamento === null) {
                 break;
@@ -108,25 +108,6 @@ class ModelDiscovery
         }
 
         return empty($blocos) ? null : implode("\n\n", $blocos);
-    }
-
-    private function casarChaveFechamento(string $conteudo, int $posicaoChaveAbertura): ?int
-    {
-        $profundidade = 0;
-        $tamanho      = strlen($conteudo);
-
-        for ($i = $posicaoChaveAbertura; $i < $tamanho; $i++) {
-            if ($conteudo[$i] === '{') {
-                $profundidade++;
-            } elseif ($conteudo[$i] === '}') {
-                $profundidade--;
-                if ($profundidade === 0) {
-                    return $i;
-                }
-            }
-        }
-
-        return null;
     }
 
     /** @return string[] */
