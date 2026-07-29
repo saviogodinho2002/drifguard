@@ -131,9 +131,13 @@ class PromptBuilder
      * @param array<string, string> $snippets caminho => conteúdo
      * @param array{path: string, content: string}|null $contextDoc
      * @param array{tabela: string, campos: string, relacoes: string} $reflectedMetadata
+     * @param array{question: string, answer: string}|null $respostaAnterior Pergunta feita numa
+     *        rodada anterior (`ask_question`) e já respondida por um humano via `drifguard:answer` —
+     *        entra como contexto humano/autoritativo sobre intenção, igual $contextDoc, nunca
+     *        sobrescreve fato estrutural.
      * @return array<int, array{role: string, content: string}>
      */
-    public function buildMessages(string $modelo, array $snippets, ?array $contextDoc, array $reflectedMetadata): array
+    public function buildMessages(string $modelo, array $snippets, ?array $contextDoc, array $reflectedMetadata, ?array $respostaAnterior = null): array
     {
         $partesUsuario = [
             "Model: {$modelo}",
@@ -146,6 +150,11 @@ class PromptBuilder
 
         if ($contextDoc !== null) {
             $partesUsuario[] = "--- contexto de negócio ({$contextDoc['path']}) ---\n{$contextDoc['content']}";
+        }
+
+        if ($respostaAnterior !== null) {
+            $partesUsuario[] = "--- pergunta anterior, já respondida por um humano ---\n"
+                . "Pergunta: {$respostaAnterior['question']}\nResposta: {$respostaAnterior['answer']}";
         }
 
         return [

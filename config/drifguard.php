@@ -121,4 +121,25 @@ return [
         'convention_path' => null, // ex: 'docs/regras/{model}.md'
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Orçamento de contexto por arquivo de apoio
+    |--------------------------------------------------------------------------
+    | Um controller/service grande pode estourar contexto/custo rápido. O pacote
+    | tenta primeiro extrair só os métodos que mencionam o model; se não achar
+    | nenhum, cai pro conteúdo integral truncado neste teto (chars). O arquivo do
+    | PRÓPRIO model nunca é truncado — é sempre a fonte primária.
+    */
+    'max_snippet_chars' => 6000,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Diretório permitido pra `request_file`
+    |--------------------------------------------------------------------------
+    | A IA pode pedir outro arquivo via tool-calling durante a análise — este é o
+    | diretório-raiz fora do qual a leitura é recusada (ex: impede pedir um path
+    | tipo '../../.env'). Default: raiz do projeto.
+    */
+    'allowed_base_path' => base_path(),
+
 ];

@@ -9,15 +9,24 @@ class ApplyModelsCommand extends Command
 {
     protected $signature = 'drifguard:apply
                             {--dry-run : Mostra o diff sem aplicar}
-                            {--force : Aplica sem pedir confirmação}';
+                            {--force : Aplica sem pedir confirmação}
+                            {--json : Saída em JSON em vez de tabela (exige --force junto, a menos que --dry-run)}';
 
     protected $description = 'Aplica a proposta gerada por drifguard:analyze no catálogo de saída';
 
     public function handle(ModelSyncService $service): int
     {
+        $json    = (bool) $this->option('json');
+        $dryRun  = (bool) $this->option('dry-run');
+        $force   = (bool) $this->option('force');
+
         $proposal = $service->readProposal();
         if (empty($proposal)) {
-            $this->info('Nenhuma proposta pendente. Rode drifguard:analyze primeiro.');
+            if ($json) {
+                $this->line(json_encode(['status' => 'no_proposal']));
+            } else {
+                $this->info('Nenhuma proposta pendente. Rode drifguard:analyze primeiro.');
+            }
             return self::SUCCESS;
         }
 
@@ -25,26 +34,57 @@ class ApplyModelsCommand extends Command
         $diff    = $service->buildDiff($current, $proposal);
 
         if (empty($diff)) {
-            $this->info('Proposta não introduz nenhuma mudança.');
+            if ($json) {
+                $this->line(json_encode(['status' => 'no_changes']));
+            } else {
+                $this->info('Proposta não introduz nenhuma mudança.');
+            }
             return self::SUCCESS;
         }
 
-        $this->table(['Model', 'Campo', 'Tipo', 'Detalhe'], array_map(
-            fn($linha) => [$linha['model'], $linha['campo'], $linha['tipo'], $linha['detalhe']],
-            $diff
-        ));
+        if (!$json) {
+            $this->table(['Model', 'Campo', 'Tipo', 'Detalhe'], array_map(
+                fn($linha) => [$linha['model'], $linha['campo'], $linha['tipo'], $linha['detalhe']],
+                $diff
+            ));
+        }
 
-        if ($this->option('dry-run')) {
-            $this->info('(dry-run — nada foi aplicado)');
+        if ($dryRun) {
+            if ($json) {
+                $this->line(json_encode(['status' => 'dry_run', 'diff' => $diff], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            } else {
+                $this->info('(dry-run — nada foi aplicado)');
+            }
             return self::SUCCESS;
         }
 
-        if (!$this->option('force') && !$this->confirm('Aplicar essas mudanças?', true)) {
+        // --json sem --force não aplica silenciosamente: uma execução headless que só queria
+        // inspecionar o diff (esqueceu --dry-run) não deve, por acidente, gravar mudança nenhuma.
+        if ($json && !$force) {
+            $this->line(json_encode([
+                'status'  => 'confirmation_required',
+                'message' => 'Rode de novo com --force (junto de --json) pra aplicar sem prompt interativo, ou --dry-run pra só inspecionar.',
+                'diff'    => $diff,
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            return self::FAILURE;
+        }
+
+        if (!$json && !$force && !$this->confirm('Aplicar essas mudanças?', true)) {
             $this->warn('Cancelado.');
             return self::SUCCESS;
         }
 
         $resultado = $service->apply($current, $proposal);
+        $service->clearProposal();
+
+        if ($json) {
+            $this->line(json_encode([
+                'status'        => 'applied',
+                'diff'          => $diff,
+                'scope_results' => $resultado['scopeResults'],
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            return self::SUCCESS;
+        }
 
         foreach ($resultado['scopeResults'] as $sr) {
             $rotulo = match ($sr['status']) {
@@ -59,7 +99,6 @@ class ApplyModelsCommand extends Command
             }
         }
 
-        $service->clearProposal();
         $this->info('✓ Aplicado.');
 
         return self::SUCCESS;

@@ -48,6 +48,44 @@ final class FieldSpec
         );
     }
 
+    // ── Factories fluentes ───────────────────────────────────────────────────
+    // Alternativa ao array cru pra quem monta config('drifguard.fields') programaticamente (dev com
+    // autocomplete, ou agente de IA editando o config) — valida no momento da construção (eager),
+    // não só quando algum command roda.
+
+    public static function string(string $name): self
+    {
+        return new self(name: $name, type: self::TYPE_STRING, llmInstructions: '');
+    }
+
+    /** @param string[] $enumValues */
+    public static function enum(string $name, array $enumValues): self
+    {
+        return new self(name: $name, type: self::TYPE_ENUM, llmInstructions: '', enumValues: $enumValues);
+    }
+
+    public static function array(string $name): self
+    {
+        return new self(name: $name, type: self::TYPE_ARRAY, llmInstructions: '');
+    }
+
+    public static function scopeClass(string $name): self
+    {
+        return new self(name: $name, type: self::TYPE_SCOPE_CLASS, llmInstructions: '');
+    }
+
+    /** Retorna uma NOVA instância (imutável) com a instrução definida. */
+    public function instructions(string $llmInstructions): self
+    {
+        return new self($this->name, $this->type, $llmInstructions, $this->enumValues, $this->required);
+    }
+
+    /** Retorna uma NOVA instância (imutável) marcada como obrigatória. */
+    public function required(bool $required = true): self
+    {
+        return new self($this->name, $this->type, $this->llmInstructions, $this->enumValues, $required);
+    }
+
     /** Converte pro formato de "property" de JSON Schema usado na definição de tool-calling. */
     public function toToolProperty(): array
     {

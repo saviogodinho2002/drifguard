@@ -38,6 +38,18 @@ class FakeAnalysisClient implements AnalysisClient
         return $this;
     }
 
+    public function enqueueRequestFile(string $path): self
+    {
+        $this->fila[] = [
+            'content'    => null,
+            'tool_calls' => [[
+                'id'       => 'call_1',
+                'function' => ['name' => 'request_file', 'arguments' => json_encode(['path' => $path])],
+            ]],
+        ];
+        return $this;
+    }
+
     public function chat(array $messages, array $tools): array
     {
         $this->mensagensRecebidas[] = $messages;

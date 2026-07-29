@@ -20,6 +20,9 @@ class ModelSyncService
 {
     private const MAX_ANALYSIS_ITER = 4;
 
+    /** Diretório que `request_file` pode ler — fora daqui, recusa (regra F). */
+    private readonly string $allowedBasePath;
+
     public function __construct(
         private readonly AnalysisClient $client,
         private readonly ModelDiscovery $discovery,
@@ -32,19 +35,54 @@ class ModelSyncService
         private readonly ?string $extraPromptRules,
         private readonly string $outputConfigPath,
         private readonly string $storagePath,
+        /** Teto de tamanho (chars) pra um arquivo de apoio sem extração de método (regra D). */
+        private readonly int $maxSnippetChars = 6000,
+        ?string $allowedBasePath = null,
     ) {
         if (!is_dir($this->storagePath)) {
             mkdir($this->storagePath, 0755, true);
         }
+        $this->allowedBasePath = $allowedBasePath ?? (getcwd() ?: '/');
     }
 
     // ── Descoberta ───────────────────────────────────────────────────────────
+
+    /** @return string[] Todo model Eloquent descoberto (introspecção — regra E). */
+    public function allModelNames(): array
+    {
+        return $this->discovery->allModelNames();
+    }
 
     /** @return string[] Models sem entrada no config de saída. */
     public function findMissingModels(): array
     {
         $existentes = array_keys($this->readOutputConfig());
         return array_values(array_diff($this->discovery->allModelNames(), $existentes));
+    }
+
+    /**
+     * Prévia sem chamar o LLM — pra `--dry-run` (regra B): quantos arquivos de apoio cada model
+     * levaria e se tem doc de contexto resolvido.
+     *
+     * @param string[] $models
+     * @return array<int, array{model: string, supporting_files: int, context_doc: ?string}>
+     */
+    public function previewFor(array $models): array
+    {
+        return array_map(function (string $modelo) {
+            $doc = $this->contextDocs->resolveFor($modelo);
+            return [
+                'model'            => $modelo,
+                'supporting_files' => count($this->discovery->supportingFilesForModel($modelo)),
+                'context_doc'      => $doc['path'] ?? null,
+            ];
+        }, $models);
+    }
+
+    /** Doc de contexto resolvido pro model, ou null (introspecção — regra E). */
+    public function contextDocFor(string $modelo): ?array
+    {
+        return $this->contextDocs->resolveFor($modelo);
     }
 
     /**
@@ -64,9 +102,11 @@ class ModelSyncService
             return ['mode' => 'force', 'models' => array_unique([...$this->discovery->allModelNames(), ...$faltando])];
         }
 
+        $rerun   = $this->modelsAwaitingRerun();
         $mudados = $this->modelsChangedSinceLastRun();
+        $todos   = array_values(array_unique([...$rerun, ...$mudados, ...$faltando]));
 
-        return ['mode' => 'diff', 'models' => array_values(array_unique([...$mudados, ...$faltando]))];
+        return ['mode' => empty($rerun) ? 'diff' : 'rerun', 'models' => $todos];
     }
 
     /** @return string[] */
@@ -106,6 +146,7 @@ class ModelSyncService
         $proposals = [];
         $questions = [];
         $builder   = new PromptBuilder($this->fieldSpecs, $this->extraPromptRules);
+        $respostas = $this->answeredQuestionsFor($models);
 
         foreach ($models as $modelo) {
             $metadata = $this->reflector->metadataFor($modelo);
@@ -116,8 +157,9 @@ class ModelSyncService
 
             $snippets = $this->gatherSnippets($modelo);
             $contextDoc = $this->contextDocs->resolveFor($modelo);
+            $respostaAnterior = $respostas[$modelo] ?? null;
 
-            $messages = $builder->buildMessages($modelo, $snippets, $contextDoc, $metadata);
+            $messages = $builder->buildMessages($modelo, $snippets, $contextDoc, $metadata, $respostaAnterior);
             $tools    = $builder->buildTools();
 
             $resultado = $this->loopAnalise($messages, $tools, $snippets);
@@ -129,7 +171,15 @@ class ModelSyncService
                 $questions[] = ['model' => $modelo, 'question' => $pergunta, 'answered' => false];
             }
 
+            if ($respostaAnterior !== null) {
+                $this->consumeAnsweredQuestions([$modelo]);
+            }
+
             $onProgress($modelo);
+        }
+
+        if (!empty($questions)) {
+            $this->recordQuestions($questions);
         }
 
         return ['proposals' => $proposals, 'questions' => $questions];
@@ -160,7 +210,7 @@ class ModelSyncService
 
                 if ($nome === 'request_file') {
                     $path = $args['path'] ?? '';
-                    $conteudo = is_file($path) ? file_get_contents($path) : "Arquivo não encontrado: {$path}";
+                    $conteudo = $this->lerArquivoComGuarda($path);
                     $snippets[$path] = $conteudo;
                     $messages[] = ['role' => 'assistant', 'content' => null, 'tool_calls' => $toolCalls];
                     $messages[] = ['role' => 'tool', 'tool_call_id' => $chamada['id'] ?? '', 'content' => $conteudo];
@@ -171,21 +221,67 @@ class ModelSyncService
         return ['proposal' => null, 'questions' => ['Análise excedeu o limite de iterações sem propor nem perguntar.']];
     }
 
+    /**
+     * Lê um arquivo pedido pela IA via `request_file`, restrito a `allowedBasePath` (regra F) — sem
+     * essa guarda, um path tipo `../../.env` seria lido sem checagem nenhuma. Recusa nunca é
+     * silenciosa: a mensagem de recusa vira o próprio conteúdo do `tool` message, pra IA ver e não
+     * insistir cegamente no mesmo path.
+     */
+    private function lerArquivoComGuarda(string $path): string
+    {
+        if ($path === '' || !is_file($path)) {
+            return "Arquivo não encontrado: {$path}";
+        }
+
+        $arquivoReal = realpath($path);
+        $baseReal    = realpath($this->allowedBasePath);
+
+        $dentroDaBase = $arquivoReal !== false && $baseReal !== false
+            && ($arquivoReal === $baseReal || str_starts_with($arquivoReal, rtrim($baseReal, '/') . '/'));
+
+        if (!$dentroDaBase) {
+            return "Acesso negado: '{$path}' está fora do diretório permitido ({$this->allowedBasePath}).";
+        }
+
+        return file_get_contents($arquivoReal) ?: '';
+    }
+
     /** @return array<string, string> caminho => conteúdo */
     private function gatherSnippets(string $modelo): array
     {
         $snippets = [];
 
+        // arquivo do próprio model é a fonte primária — sempre inteiro, nunca truncado (regra D)
         $modelPath = $this->discovery->modelFilePath($modelo);
         if ($modelPath) {
             $snippets[$modelPath] = file_get_contents($modelPath) ?: '';
         }
 
         foreach ($this->discovery->supportingFilesForModel($modelo) as $path) {
-            $snippets[$path] = file_get_contents($path) ?: '';
+            $snippets[$path] = $this->snippetDeApoio($path, $modelo);
         }
 
         return $snippets;
+    }
+
+    /**
+     * Arquivo de apoio (controller/service): tenta extrair só os métodos relevantes primeiro; se
+     * não achar nenhum, cai pro conteúdo integral truncado em `maxSnippetChars` — nunca estoura sem
+     * avisar (regra D).
+     */
+    private function snippetDeApoio(string $path, string $modelo): string
+    {
+        $extraido = $this->discovery->extractRelevantMethods($path, $modelo);
+        if ($extraido !== null) {
+            return $extraido;
+        }
+
+        $conteudo = file_get_contents($path) ?: '';
+        if (mb_strlen($conteudo) > $this->maxSnippetChars) {
+            return mb_substr($conteudo, 0, $this->maxSnippetChars) . "\n... (truncado)";
+        }
+
+        return $conteudo;
     }
 
     // ── Persistência (context.json / proposal.php / questions.md) ───────────
@@ -237,6 +333,90 @@ class ModelSyncService
             $linhas[] = "## {$q['model']}\n\n{$q['question']}\n\n> Resposta: \n";
         }
         file_put_contents($this->storagePath('questions.md'), implode("\n", $linhas));
+    }
+
+    // ── Perguntas pendentes (context.json) — fecha o gap de paridade com o modo `rerun` original ──
+
+    /** @param array<int, array{model: string, question: string, answered: bool}> $questions */
+    private function recordQuestions(array $questions): void
+    {
+        $ctx = $this->readContext();
+        $ctx['pending_questions'] = array_merge($ctx['pending_questions'] ?? [], array_map(
+            fn($q) => ['model' => $q['model'], 'question' => $q['question'], 'answered' => false, 'answer' => null],
+            $questions
+        ));
+        $this->writeContext($ctx);
+    }
+
+    /**
+     * Marca a última pergunta não-respondida de $modelo como respondida — usado por
+     * `drifguard:answer`, alternativa a editar `questions.md` à mão.
+     *
+     * @return array{found: bool, question: ?string}
+     */
+    public function answerQuestion(string $modelo, string $resposta): array
+    {
+        $ctx    = $this->readContext();
+        $lista  = $ctx['pending_questions'] ?? [];
+        $indice = null;
+
+        foreach ($lista as $i => $q) {
+            if ($q['model'] === $modelo && !$q['answered']) {
+                $indice = $i;
+            }
+        }
+
+        if ($indice === null) {
+            return ['found' => false, 'question' => null];
+        }
+
+        $lista[$indice]['answered'] = true;
+        $lista[$indice]['answer']   = $resposta;
+        $ctx['pending_questions']   = $lista;
+        $this->writeContext($ctx);
+
+        return ['found' => true, 'question' => $lista[$indice]['question']];
+    }
+
+    /** @return string[] Models com pergunta respondida (via drifguard:answer) mas ainda não reanalisados. */
+    public function modelsAwaitingRerun(): array
+    {
+        $ctx    = $this->readContext();
+        $models = [];
+        foreach ($ctx['pending_questions'] ?? [] as $q) {
+            if ($q['answered']) {
+                $models[] = $q['model'];
+            }
+        }
+        return array_values(array_unique($models));
+    }
+
+    /**
+     * @param string[] $models
+     * @return array<string, array{question: string, answer: string}> última resposta por model —
+     *         alimenta o prompt da próxima análise (regra C).
+     */
+    private function answeredQuestionsFor(array $models): array
+    {
+        $ctx = $this->readContext();
+        $out = [];
+        foreach ($ctx['pending_questions'] ?? [] as $q) {
+            if ($q['answered'] && in_array($q['model'], $models, true)) {
+                $out[$q['model']] = ['question' => $q['question'], 'answer' => $q['answer']];
+            }
+        }
+        return $out;
+    }
+
+    /** @param string[] $models Remove da fila as perguntas já respondidas e consumidas nesta análise. */
+    private function consumeAnsweredQuestions(array $models): void
+    {
+        $ctx = $this->readContext();
+        $ctx['pending_questions'] = array_values(array_filter(
+            $ctx['pending_questions'] ?? [],
+            fn($q) => !(in_array($q['model'], $models, true) && $q['answered'])
+        ));
+        $this->writeContext($ctx);
     }
 
     // ── Aplicação (merge + escrita do config de saída) ───────────────────────

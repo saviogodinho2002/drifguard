@@ -36,14 +36,19 @@ class ModelSyncServiceIntegrationTest extends TestCase
         parent::tearDown();
     }
 
-    private function makeService(FakeAnalysisClient $client, array $fieldSpecs = []): ModelSyncService
-    {
+    private function makeService(
+        FakeAnalysisClient $client,
+        array $fieldSpecs = [],
+        array $supportingPaths = [],
+        ?string $allowedBasePath = null,
+        int $maxSnippetChars = 6000,
+    ): ModelSyncService {
         return new ModelSyncService(
             client: $client,
             discovery: new ModelDiscovery(
                 modelsPath: __DIR__ . '/../Fixtures/Models',
                 modelNamespace: 'Saviogodinho2002\\Drifguard\\Tests\\Fixtures\\Models',
-                supportingPaths: [],
+                supportingPaths: $supportingPaths,
             ),
             reflector: new ModelReflector(modelNamespace: 'Saviogodinho2002\\Drifguard\\Tests\\Fixtures\\Models'),
             contextDocs: new ContextDocsResolver(basePath: __DIR__),
@@ -53,6 +58,8 @@ class ModelSyncServiceIntegrationTest extends TestCase
             extraPromptRules: null,
             outputConfigPath: $this->tmpOutputConfig,
             storagePath: $this->tmpStorage,
+            maxSnippetChars: $maxSnippetChars,
+            allowedBasePath: $allowedBasePath,
         );
     }
 
@@ -100,5 +107,89 @@ class ModelSyncServiceIntegrationTest extends TestCase
         $this->assertEmpty($result['proposals']);
         $this->assertCount(1, $result['questions']);
         $this->assertSame('Post', $result['questions'][0]['model']);
+    }
+
+    /**
+     * Item C: fecha o gap de paridade com o `rerun` mode original — responder uma pergunta pendente
+     * via `answerQuestion()` (o que `drifguard:answer` chama) precisa: (1) marcar o model pra
+     * reanálise em `resolveRunState()`, e (2) alimentar o par pergunta/resposta na próxima análise.
+     */
+    public function test_answered_question_triggers_rerun_mode_and_feeds_context_into_next_analysis(): void
+    {
+        $client  = (new FakeAnalysisClient())->enqueueAskQuestion('published_at nulo é sempre rascunho?');
+        $service = $this->makeService($client);
+
+        $service->runAnalysis(['Post'], fn() => null);
+        $this->assertEmpty($service->modelsAwaitingRerun(), 'antes de responder, não deve estar aguardando rerun');
+
+        $resposta = $service->answerQuestion('Post', 'Sim, published_at nulo = rascunho.');
+        $this->assertTrue($resposta['found']);
+        $this->assertSame(['Post'], $service->modelsAwaitingRerun());
+
+        $state = $service->resolveRunState(force: false, modelsOption: []);
+        $this->assertSame('rerun', $state['mode']);
+        $this->assertContains('Post', $state['models']);
+
+        $client->enqueueProposeUpdate(['descricao' => 'Post do blog.', 'notas' => 'x']);
+        $service->runAnalysis(['Post'], fn() => null);
+
+        $ultimaChamada    = end($client->mensagensRecebidas);
+        $conteudoUsuario  = $ultimaChamada[1]['content'];
+        $this->assertStringContainsString('published_at nulo é sempre rascunho?', $conteudoUsuario);
+        $this->assertStringContainsString('Sim, published_at nulo = rascunho.', $conteudoUsuario);
+
+        // consumida — não deve mais entrar na fila de rerun depois de reanalisada
+        $this->assertEmpty($service->modelsAwaitingRerun());
+    }
+
+    /** Item F: path fora do allowedBasePath é recusado explicitamente — nunca lido às cegas. */
+    public function test_request_file_outside_allowed_base_path_is_refused_not_read(): void
+    {
+        $tmpSecreto = tempnam(sys_get_temp_dir(), 'drifguard_secreto_');
+        file_put_contents($tmpSecreto, 'SEGREDO_NAO_DEVE_VAZAR');
+
+        $client = (new FakeAnalysisClient())
+            ->enqueueRequestFile($tmpSecreto)
+            ->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y']);
+
+        $service = $this->makeService($client, allowedBasePath: __DIR__ . '/../Fixtures');
+
+        $service->runAnalysis(['Post'], fn() => null);
+
+        $conteudoTool = null;
+        foreach ($client->mensagensRecebidas[1] ?? [] as $m) {
+            if (($m['role'] ?? null) === 'tool') {
+                $conteudoTool = $m['content'];
+            }
+        }
+
+        $this->assertNotNull($conteudoTool);
+        $this->assertStringContainsString('Acesso negado', $conteudoTool);
+        $this->assertStringNotContainsString('SEGREDO_NAO_DEVE_VAZAR', $conteudoTool);
+
+        @unlink($tmpSecreto);
+    }
+
+    /** Item F (caminho feliz): dentro do allowedBasePath, o conteúdo real é lido normalmente. */
+    public function test_request_file_inside_allowed_base_path_is_read_normally(): void
+    {
+        $arquivo = __DIR__ . '/../Fixtures/Models/Post.php';
+
+        $client = (new FakeAnalysisClient())
+            ->enqueueRequestFile($arquivo)
+            ->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y']);
+
+        $service = $this->makeService($client, allowedBasePath: __DIR__ . '/../Fixtures');
+
+        $service->runAnalysis(['Post'], fn() => null);
+
+        $conteudoTool = null;
+        foreach ($client->mensagensRecebidas[1] ?? [] as $m) {
+            if (($m['role'] ?? null) === 'tool') {
+                $conteudoTool = $m['content'];
+            }
+        }
+
+        $this->assertStringContainsString('class Post extends Model', $conteudoTool);
     }
 }

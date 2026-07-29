@@ -5,7 +5,11 @@ namespace Saviogodinho2002\Drifguard;
 use Illuminate\Support\ServiceProvider;
 use Saviogodinho2002\Drifguard\Clients\OpenRouterAnalysisClient;
 use Saviogodinho2002\Drifguard\Console\AnalyzeModelsCommand;
+use Saviogodinho2002\Drifguard\Console\AnswerCommand;
 use Saviogodinho2002\Drifguard\Console\ApplyModelsCommand;
+use Saviogodinho2002\Drifguard\Console\ContextListCommand;
+use Saviogodinho2002\Drifguard\Console\DoctorCommand;
+use Saviogodinho2002\Drifguard\Console\FieldsCommand;
 use Saviogodinho2002\Drifguard\Contracts\AnalysisClient;
 use Saviogodinho2002\Drifguard\Support\ConfigWriter;
 use Saviogodinho2002\Drifguard\Support\ContextDocsResolver;
@@ -53,8 +57,10 @@ class DrifguardServiceProvider extends ServiceProvider
                 conventionPath: $contextDocsConfig['convention_path'] ?? null,
             );
 
+            // Aceita FieldSpec já construído (factories fluentes) OU array cru (fromArray) na mesma
+            // lista — dá pra misturar os dois estilos em config('drifguard.fields').
             $fieldSpecs = array_map(
-                fn(array $spec) => FieldSpec::fromArray($spec),
+                fn($spec) => $spec instanceof FieldSpec ? $spec : FieldSpec::fromArray($spec),
                 $config['fields'] ?? []
             );
 
@@ -79,6 +85,8 @@ class DrifguardServiceProvider extends ServiceProvider
                 extraPromptRules: $extraPromptRules,
                 outputConfigPath: $config['output_path'],
                 storagePath: $config['storage_path'],
+                maxSnippetChars: $config['max_snippet_chars'] ?? 6000,
+                allowedBasePath: $config['allowed_base_path'] ?? base_path(),
             );
         });
     }
@@ -89,6 +97,10 @@ class DrifguardServiceProvider extends ServiceProvider
             $this->commands([
                 AnalyzeModelsCommand::class,
                 ApplyModelsCommand::class,
+                DoctorCommand::class,
+                AnswerCommand::class,
+                FieldsCommand::class,
+                ContextListCommand::class,
             ]);
 
             $this->publishes([

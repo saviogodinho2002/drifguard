@@ -69,6 +69,66 @@ class ModelDiscovery
         return $encontrados;
     }
 
+    /**
+     * Extrai só os métodos de $arquivo que mencionam $modelo no corpo, em vez do arquivo inteiro —
+     * um controller grande normalmente só toca o model em 1-2 métodos, o resto é ruído de contexto
+     * (custo/tokens) sem ganho de informação pro LLM. Casamento de chaves manual (balanceamento de
+     * `{`/`}`) em vez de regex de bloco inteiro, porque método pode ter chaves aninhadas.
+     *
+     * @return string|null Métodos relevantes concatenados, ou null se nenhum mencionar o model
+     *         (o chamador deve cair pro conteúdo integral truncado nesse caso).
+     */
+    public function extractRelevantMethods(string $arquivo, string $modelo): ?string
+    {
+        $conteudo = file_get_contents($arquivo);
+        if ($conteudo === false) {
+            return null;
+        }
+
+        $termo   = preg_quote($modelo, '/');
+        $blocos  = [];
+        $offset  = 0;
+        $padrao  = '/(?:public|protected|private)?\s*function\s+\w+\s*\([^)]*\)\s*(?::\s*\??[\w\\\\|]+\s*)?\{/';
+
+        while (preg_match($padrao, $conteudo, $m, PREG_OFFSET_CAPTURE, $offset)) {
+            $inicioAssinatura = $m[0][1];
+            $posicaoChaveAbertura = $inicioAssinatura + strlen($m[0][0]) - 1;
+            $posicaoChaveFechamento = $this->casarChaveFechamento($conteudo, $posicaoChaveAbertura);
+
+            if ($posicaoChaveFechamento === null) {
+                break;
+            }
+
+            $corpo = substr($conteudo, $inicioAssinatura, $posicaoChaveFechamento - $inicioAssinatura + 1);
+            if (preg_match('/\b' . $termo . '\b/', $corpo)) {
+                $blocos[] = $corpo;
+            }
+
+            $offset = $posicaoChaveFechamento + 1;
+        }
+
+        return empty($blocos) ? null : implode("\n\n", $blocos);
+    }
+
+    private function casarChaveFechamento(string $conteudo, int $posicaoChaveAbertura): ?int
+    {
+        $profundidade = 0;
+        $tamanho      = strlen($conteudo);
+
+        for ($i = $posicaoChaveAbertura; $i < $tamanho; $i++) {
+            if ($conteudo[$i] === '{') {
+                $profundidade++;
+            } elseif ($conteudo[$i] === '}') {
+                $profundidade--;
+                if ($profundidade === 0) {
+                    return $i;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /** @return string[] */
     private function phpFilesRecursively(string $dir): array
     {
