@@ -1,0 +1,46 @@
+{
+    "name": "saviogodinho2002/drifguard",
+    "description": "Keeps a curated PHP config catalog of your Eloquent models in sync with the real code, using an LLM-assisted analyze/apply workflow (git-diff-based change detection, reflection-first structural facts, human-in-the-loop review before writing).",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "eloquent", "ai", "llm", "documentation", "sync", "drift"],
+    "authors": [
+        {
+            "name": "Savio Godinho"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "illuminate/console": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/database": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/support": "^10.0|^11.0|^12.0|^13.0",
+        "guzzlehttp/guzzle": "^7.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^8.0|^9.0|^10.0",
+        "phpunit/phpunit": "^10.0|^11.0",
+        "laravel/pint": "^1.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Saviogodinho2002\\Drifguard\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Saviogodinho2002\\Drifguard\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Saviogodinho2002\\Drifguard\\DrifguardServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true
+    }
+}
