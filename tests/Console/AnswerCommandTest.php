@@ -61,4 +61,32 @@ class AnswerCommandTest extends TestCase
 
         $this->assertSame(1, $exitCode);
     }
+
+    public function test_json_output_when_question_answered(): void
+    {
+        $fake = (new FakeAnalysisClient())->enqueueAskQuestion('Campo X é obrigatório em algum fluxo?');
+        $this->app->bind(AnalysisClient::class, fn() => $fake);
+
+        /** @var ModelSyncService $service */
+        $service = $this->app->make(ModelSyncService::class);
+        $service->runAnalysis(['Post'], fn() => null);
+
+        $exitCode = Artisan::call('driftguard:answer', ['model' => 'Post', 'resposta' => ['Sim,', 'é.'], '--json' => true]);
+        $saida    = json_decode(Artisan::output(), true);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertSame('answered', $saida['status']);
+        $this->assertSame('Post', $saida['model']);
+        $this->assertSame('Campo X é obrigatório em algum fluxo?', $saida['question']);
+    }
+
+    public function test_json_output_when_no_pending_question(): void
+    {
+        $exitCode = Artisan::call('driftguard:answer', ['model' => 'Post', 'resposta' => ['qualquer'], '--json' => true]);
+        $saida    = json_decode(Artisan::output(), true);
+
+        $this->assertSame(1, $exitCode);
+        $this->assertSame('not_found', $saida['status']);
+        $this->assertSame('Post', $saida['model']);
+    }
 }

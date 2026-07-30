@@ -37,6 +37,30 @@ class DoctorCommandTest extends TestCase
         $this->assertSame(0, $exitCode);
     }
 
+    public function test_json_output_is_valid_and_decodable(): void
+    {
+        $exitCode = Artisan::call('driftguard:doctor', ['--json' => true]);
+        $saida    = json_decode(Artisan::output(), true);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertTrue($saida['ok']);
+        $this->assertNotEmpty($saida['checks']);
+        $this->assertArrayHasKey('status', $saida['checks'][0]);
+        $this->assertArrayHasKey('item', $saida['checks'][0]);
+        $this->assertArrayHasKey('detalhe', $saida['checks'][0]);
+    }
+
+    public function test_json_output_reflects_failure(): void
+    {
+        config(['driftguard.models_path' => '/caminho/que/definitivamente/nao/existe']);
+
+        $exitCode = Artisan::call('driftguard:doctor', ['--json' => true]);
+        $saida    = json_decode(Artisan::output(), true);
+
+        $this->assertSame(1, $exitCode);
+        $this->assertFalse($saida['ok']);
+    }
+
     public function test_fails_on_malformed_field(): void
     {
         config(['driftguard.fields' => [

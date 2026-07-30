@@ -42,16 +42,70 @@ return [
     |--------------------------------------------------------------------------
     | Cliente de análise (LLM)
     |--------------------------------------------------------------------------
-    | Implementação padrão: OpenRouter, pré-configurada com um model Claude. Troque
-    | 'model' por qualquer slug que a OpenRouter aceite, ou faça bind de outra
-    | implementação de Contracts\AnalysisClient no seu próprio ServiceProvider se
-    | quiser usar outro provedor (Anthropic direto, OpenAI, etc.).
+    | 3 formas de escolher o provedor, em ordem de esforço:
+    | 1. 'driver' => 'openrouter' (default) — API stateless, pré-configurada com um model Claude.
+    |    Troque 'model' por qualquer slug que a OpenRouter aceite.
+    | 2. 'driver' => 'cli_harness' — invoca um agente-CLI (Claude Code, Gemini CLI, opencode) como
+    |    subprocesso; o harness explora o código sozinho em vez de receber snippet pré-empacotado.
+    |    Escolha um preset em 'cli_harness_preset' (default 'claude'; ajuste 'cli_harness' se a sua
+    |    versão de qualquer uma das CLIs usar uma flag diferente do preset). Override com null
+    |    explícito é sempre respeitado (nunca vira o default do preset 'claude' por engano) — é
+    |    assim que 'gemini'/'opencode' conseguem deixar dir_flag/tools_flag sem equivalente
+    |    conhecido. Trade-offs: overhead de processo por chamada pode ser maior que 1 POST HTTP, já
+    |    que o harness gasta turnos explorando o código sozinho — mas a saída tende a ser mais rica
+    |    (cross-referências que o harness descobre sozinho via Grep, não limitadas ao orçamento de
+    |    max_snippet_chars). O CLI precisa estar AUTENTICADO no ambiente que roda driftguard:analyze
+    |    (login prévio ou API key do provedor da CLI — pode não servir bem pra CI/headless sem
+    |    sessão interativa). Custo vem do relatório da própria CLI, não desta config; Gemini CLI
+    |    ainda não expõe custo em modo headless na versão atual.
+    | 3. Bind da sua própria implementação de Contracts\AnalysisClient no seu ServiceProvider —
+    |    qualquer outro provedor (Anthropic direto, OpenAI, outro CLI com saída totalmente diferente).
     */
     'llm' => [
-        'api_key_env' => 'OPENROUTER_API_KEY',
-        'model'       => 'anthropic/claude-sonnet-4-6',
-        'max_tokens'  => 8000,
-        'timeout'     => 300,
+        'driver'       => 'openrouter', // 'openrouter' | 'cli_harness'
+        'api_key_env'  => 'OPENROUTER_API_KEY',
+        'model'        => 'anthropic/claude-sonnet-4-6',
+        'max_tokens'   => 8000,
+        'timeout'      => 300,
+
+        // Só usado quando 'driver' => 'cli_harness'. Escolha um preset e opcionalmente
+        // sobrescreva chaves específicas em 'cli_harness' (mesmo padrão de override do resto do pacote).
+        'cli_harness_preset' => 'claude', // 'claude' | 'gemini' | 'opencode'
+        'cli_harness'        => [
+            // qualquer chave aqui sobrescreve o preset escolhido, ex: 'timeout' => 600
+        ],
+        'cli_harness_presets' => [
+            'claude' => [ // validado ao vivo (chamada real contra um model de produção)
+                'command'         => 'claude',
+                'extra_args'      => ['--output-format', 'json'],
+                'response_format' => 'single_json',
+                'result_field'    => 'result',
+                'cost_field'      => 'total_cost_usd',
+                'dir_flag'        => '--add-dir',
+                'tools_flag'      => '--allowedTools',
+                'harness_tools'   => ['Read', 'Grep', 'Glob'],
+            ],
+            'gemini' => [ // Gemini CLI ainda não expõe stats/custo em modo headless na versão atual
+                'command'         => 'gemini',
+                'extra_args'      => [],
+                'response_format' => 'plain_text',
+                'result_field'    => null,
+                'cost_field'      => null,
+                'dir_flag'        => null, // sem flag de restrição de diretório equivalente ao --add-dir
+                'tools_flag'      => null,
+                'harness_tools'   => [],
+            ],
+            'opencode' => [ // expõe custo via evento step_finish num stream de JSON, não um objeto único
+                'command'         => 'opencode',
+                'extra_args'      => ['run', '--format', 'json'],
+                'response_format' => 'json_stream',
+                'result_field'    => 'text', // ajuste conforme o nome exato do campo na sua versão, se divergir
+                'cost_field'      => 'cost', // idem
+                'dir_flag'        => null, // controle de diretório é via config do agente, não flag de runtime
+                'tools_flag'      => null, // controle de permissão é via config do agente, não flag de runtime
+                'harness_tools'   => [],
+            ],
+        ],
     ],
 
     /*

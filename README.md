@@ -75,10 +75,12 @@ php artisan driftguard:context:list --model=Post
 Todo command aceita `--json` (saída estruturada em vez de tabela/cores):
 
 ```bash
+php artisan driftguard:doctor --json                # {ok: bool, checks: [{status, item, detalhe}, ...]}
 php artisan driftguard:analyze --dry-run --json    # prévia sem custo, parseável
 php artisan driftguard:analyze --json              # roda e devolve {mode, models, proposals, questions}
 php artisan driftguard:apply --json --dry-run       # {status: "dry_run", diff: [...]}
 php artisan driftguard:apply --json --force         # aplica sem prompt interativo, {status: "applied", ...}
+php artisan driftguard:answer Post Sim --json       # {status: "answered"|"not_found", model, question}
 ```
 
 `driftguard:apply --json` **sem** `--force` nunca aplica — devolve `{status: "confirmation_required", diff}`
@@ -146,8 +148,67 @@ Tudo em `config/driftguard.php`, publicado no seu próprio projeto — edite liv
   ficar de fora do git (`storage/` é ignorado por padrão no Laravel), cada dev/agente vê um estado
   local diferente, sem saber o que outro já analisou ou respondeu. Se realmente quiser esse arquivo
   fora do git, aponte pra `storage_path('app/driftguard')` e adicione ao seu `.gitignore` você mesmo.
-- **`discovery_paths`/`model_namespace`/`output_path`** — todos os caminhos usados são
-  configuráveis, nada fixo em `app/Models`.
+- **`models_path`/`supporting_paths`/`model_namespace`/`output_path`** — todos os caminhos usados
+  são configuráveis, nada fixo em `app/Models`.
+
+## Provedor alternativo: harness de CLI
+
+Além de OpenRouter (padrão) e bind da sua própria `Contracts\AnalysisClient` (sempre suportado, veja
+o comentário em `DriftGuardServiceProvider`), o pacote traz um 3º caminho: invocar um agente-CLI
+(Claude Code, Gemini CLI, opencode) como subprocesso, em vez de uma API stateless. A diferença real
+é que o harness explora o código **sozinho** (Read/Grep próprios, restritos ao seu projeto) em vez
+de receber um snippet pré-empacotado pelo orçamento de contexto do driftguard.
+
+```php
+// config/driftguard.php
+'llm' => [
+    'driver'             => 'cli_harness',
+    'cli_harness_preset' => 'claude', // 'claude' | 'gemini' | 'opencode'
+],
+```
+
+O preset `claude` usa o Claude Code CLI: a saída é um JSON limpo, exatamente no formato pedido, com
+regras de negócio numeradas e cross-referências que o harness descobre sozinho via Grep (sem
+precisar que você cite o arquivo relacionado no prompt). `gemini`/`opencode` seguem a documentação
+oficial de cada CLI; se a sua versão usar uma flag diferente, sobrescreva qualquer chave em
+`llm.cli_harness` (mesmo padrão de override do resto do pacote):
+
+```php
+'cli_harness' => [
+    'timeout' => 600, // por exemplo, sem precisar redefinir o preset inteiro
+],
+```
+
+**Override com `null` explícito é respeitado** — se você precisar zerar uma flag que um preset já
+define (ex: forçar `'dir_flag' => null` no preset `claude` porque sua versão da CLI mudou o nome da
+flag), `null` de propósito NUNCA é silenciosamente trocado pelo default do preset. Isso vale tanto
+pra chave que você sobrescreve quanto pras que os próprios presets `gemini`/`opencode` já deixam
+`null` (sem flag de restrição de diretório equivalente nessas CLIs) — o driftguard nunca injeta uma
+flag específica de outra CLI (como `--add-dir`/`--allowedTools`, do Claude Code CLI) só porque o
+preset não definiu uma equivalente.
+
+**Custo por chamada só aparece no log** — o contrato `AnalysisClient` não tem campo de custo (só
+`content`/`tool_calls`), então `CliHarnessAnalysisClient` registra o custo de cada chamada via
+`Log::info('[driftguard] CliHarnessAnalysisClient: custo da chamada', [...])` sempre que o formato
+escolhido expõe um `cost_field` — confira seu log de aplicação (`storage/logs/laravel.log` por
+padrão) pra acompanhar gasto real.
+
+**Trade-offs a considerar**:
+- **Custo/tempo por chamada pode ser maior que 1 POST HTTP no OpenRouter.** O harness gasta turnos
+  explorando o código (Read/Grep) antes de responder, em vez de receber tudo já pronto — isso soma
+  tempo e, se o provedor cobrar por uso, custo por cima do que uma chamada HTTP simples custaria. Em
+  troca, a saída tende a ser mais rica que o que `extractSafeParts()`/`packWithinBudget()` conseguem
+  com um orçamento fixo de contexto, já que o harness explora o que precisar, sem teto pré-definido.
+- **O custo "equivalente de API" só é custo real se o provedor cobrar por uso.** Numa assinatura de
+  valor fixo com folga de uso, o custo marginal de rodar isso pode ser ~US$0 — a resposta de "vale a
+  pena" depende do seu plano, não de um número fixo.
+- **O CLI precisa estar AUTENTICADO no ambiente que roda `driftguard:analyze`** (login prévio ou API
+  key do provedor da CLI) — diferente de só ter uma env var configurada; pode não servir bem pra
+  CI/headless sem uma sessão interativa já estabelecida.
+- **Rastreio de custo depende do CLI.** Claude Code CLI expõe `total_cost_usd` direto no
+  `--output-format json`. Gemini CLI ainda não expõe custo em modo headless na versão atual (preset
+  `gemini` já reflete isso, `cost_field => null`). opencode expõe custo num evento `step_finish`
+  dentro de um stream de JSON, não num objeto único.
 
 ## Multi-tenancy: escrevendo uma boa instrução pra `scope_class`
 

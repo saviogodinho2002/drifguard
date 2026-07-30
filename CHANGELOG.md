@@ -3,6 +3,49 @@
 Todas as mudanças notáveis deste projeto são documentadas aqui. Formato baseado em
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [0.7.0] - 2026-07-30
+
+Motivado por uma pergunta direta: dá pra trocar o provedor de análise por um agente-CLI (Claude
+Code, Gemini CLI, opencode) em vez de uma API paga por token, com a mesma qualidade? Testei de
+verdade antes de escrever qualquer código — nada de assumir.
+
+### Added
+- **`CliHarnessAnalysisClient`** — nova implementação de `Contracts\AnalysisClient` que invoca um
+  agente-CLI como subprocesso em vez de uma API stateless. A ponte com o contrato `chat(messages,
+  tools) -> tool_calls` é feita internamente: serializa `messages`+`tools` num prompt único, instrui
+  o CLI a responder com exatamente 1 JSON `{"tool": ..., "arguments": ...}`, e faz parse de acordo
+  com o formato de resposta configurado (`single_json`/`json_stream`/`plain_text`) — o bloco JSON é
+  extraído com casamento de chaves balanceado (`Support\BraceMatcher`, já usado em
+  `ModelDiscovery`/`ScopeClassWriter`), tolerando prosa antes/depois em vez de exigir a resposta
+  inteira pura. Roda com working directory fixado explicitamente (`Process::path()`) no diretório
+  permitido. Qualquer falha (CLI ausente, timeout, saída não-JSON) degrada pra `tool_calls` vazio —
+  nunca derruba o batch inteiro por 1 model falhar.
+- `llm.driver => 'cli_harness'` em `config/driftguard.php`, com 3 presets prontos
+  (`cli_harness_preset => 'claude' | 'gemini' | 'opencode'`) e override pontual de qualquer chave via
+  `llm.cli_harness` — um `null` explícito num preset (ex: `gemini.dir_flag`, sem flag equivalente
+  confirmada na doc) é sempre respeitado, nunca substituído pelo default de outro preset.
+  **Validado duas vezes contra um model de produção real**: uma chamada de shell manual, e depois a
+  classe `CliHarnessAnalysisClient` de ponta a ponta (não comando fake) — ambas com o preset
+  `claude`. Resultado: JSON limpo, saída com regras de negócio numeradas e cross-referências que o
+  harness descobriu sozinho via Grep (nenhum arquivo relacionado foi citado no prompt), qualidade
+  nitidamente acima do que `extractSafeParts()`/`packWithinBudget()` conseguem com um orçamento fixo
+  de contexto. Custo real: ~US$0.40 e ~70s pro model MENOR de uma amostra de 5 — mais caro por model
+  do que a hipótese de "sai mais barato", SE cobrado por token (a resposta depende do plano do
+  usuário ser assinatura de valor fixo com folga de uso, ou algo medido).
+- Presets `gemini`/`opencode`: pesquisados via documentação oficial + issues públicas do GitHub, não
+  instalados nem testados ao vivo nesta sessão. Achados que moldaram os presets: `--output-format
+  json` do Gemini CLI está quebrado na versão atual
+  ([gemini-cli#9009](https://github.com/google-gemini/gemini-cli/issues/9009)) — preset reflete isso
+  com `response_format => 'plain_text'` e `cost_field => null`; opencode expõe custo num evento
+  `step_finish` dentro de um stream de JSON (`response_format => 'json_stream'`) — um bug real onde
+  esse evento podia não ser emitido a tempo já foi corrigido
+  ([opencode#26855](https://github.com/anomalyco/opencode/issues/26855)).
+- `--json` em `driftguard:doctor` e `driftguard:answer` — eram os únicos 2 commands sem saída
+  estruturada, encontrado numa revisão de documentação (o README afirmava "todo command aceita
+  `--json`", o que era falso até esta entrada). `doctor` devolve `{ok, checks: [{status, item,
+  detalhe}, ...]}`; `answer` devolve `{status: "answered"|"not_found"|"missing_answer_text", model,
+  question?}`.
+
 ## [0.6.1] - 2026-07-30
 
 Estudei o [docudoodle](https://github.com/genericmilk/docudoodle) (gerador de docs Laravel via LLM)
@@ -109,7 +152,7 @@ perde nada, com redução real porém mais modesta (1.6%-35.5% nos 5 models test
 - **Breaking: pacote renomeado de `drifguard` pra `driftguard`** (corrige o "t" que faltava de
   "drift"). Afeta tudo: nome do pacote Composer (`saviogodinho2002/driftguard`), namespace PHP
   (`Saviogodinho2002\DriftGuard\`), nome da service provider (`DriftGuardServiceProvider`), todos
-  os 8 comandos artisan (`driftguard:analyze`, `driftguard:apply`, `driftguard:doctor`,
+  os 7 comandos artisan (`driftguard:analyze`, `driftguard:apply`, `driftguard:doctor`,
   `driftguard:init`, `driftguard:answer`, `driftguard:fields`, `driftguard:context:list`), arquivo
   e chave de config (`config/driftguard.php`, `config('driftguard.*')`), tag de publish
   (`driftguard-config`), e os defaults de path/namespace de `scope_class` (`app_path('DriftGuard/Scopes')`,
@@ -212,4 +255,4 @@ Motivado por um relatório real de produção (segundo projeto externo): 13/45 (
 ## [0.1.0] - 2026-07-29
 
 - Lançamento inicial: extração do `AnalyzeModels`/`ApplyModels` internos pra um pacote
-  Laravel/Composer standalone, framework-agnostic (nenhum termo específico de domínio).
+  Laravel/Composer standalone, domain-agnostic (nenhum termo específico de domínio).

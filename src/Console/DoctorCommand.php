@@ -13,7 +13,7 @@ use Saviogodinho2002\DriftGuard\Support\ModelDiscovery;
  */
 class DoctorCommand extends Command
 {
-    protected $signature = 'driftguard:doctor';
+    protected $signature = 'driftguard:doctor {--json : Saída em JSON em vez de tabela}';
 
     protected $description = 'Valida a config do driftguard (fields, paths, chave de API) sem chamar o LLM';
 
@@ -127,6 +127,12 @@ class DoctorCommand extends Command
             $checks[] = ['PASS', "env:{$apiKeyEnv}", 'definida'];
         } else {
             $checks[] = ['WARN', "env:{$apiKeyEnv}", 'não definida — driftguard:analyze vai falhar até configurar'];
+        }
+
+        if ($this->option('json')) {
+            $checksChaveados = array_map(fn($c) => ['status' => $c[0], 'item' => $c[1], 'detalhe' => $c[2]], $checks);
+            $this->line(json_encode(['ok' => !$falhou, 'checks' => $checksChaveados], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            return $falhou ? self::FAILURE : self::SUCCESS;
         }
 
         $this->table(['Status', 'Item', 'Detalhe'], $checks);

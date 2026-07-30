@@ -3,6 +3,7 @@
 namespace Saviogodinho2002\DriftGuard;
 
 use Illuminate\Support\ServiceProvider;
+use Saviogodinho2002\DriftGuard\Clients\CliHarnessAnalysisClient;
 use Saviogodinho2002\DriftGuard\Clients\OpenRouterAnalysisClient;
 use Saviogodinho2002\DriftGuard\Console\AnalyzeModelsCommand;
 use Saviogodinho2002\DriftGuard\Console\AnswerCommand;
@@ -30,6 +31,12 @@ class DriftGuardServiceProvider extends ServiceProvider
         // trocar de implementação sem tocar neste pacote.
         $this->app->bind(AnalysisClient::class, function ($app) {
             $config = $app['config']->get('driftguard.llm', []);
+
+            if (($config['driver'] ?? 'openrouter') === 'cli_harness') {
+                $allowedBasePath = $app['config']->get('driftguard.allowed_base_path', base_path());
+                return $this->makeCliHarnessClient($config, $allowedBasePath);
+            }
+
             $apiKey = env($config['api_key_env'] ?? 'OPENROUTER_API_KEY', '');
 
             return new OpenRouterAnalysisClient(
@@ -111,6 +118,37 @@ class DriftGuardServiceProvider extends ServiceProvider
                 __DIR__ . '/../config/driftguard.php' => config_path('driftguard.php'),
             ], 'driftguard-config');
         }
+    }
+
+    /**
+     * Resolve o preset escolhido em 'cli_harness_preset' (claude/gemini/opencode — só o de claude
+     * foi validado ao vivo, os outros seguem documentação/issues públicas do GitHub, ver comentário
+     * em config/driftguard.php), com override pontual de qualquer chave via 'cli_harness'.
+     */
+    private function makeCliHarnessClient(array $config, string $allowedBasePath): CliHarnessAnalysisClient
+    {
+        $presetNome = $config['cli_harness_preset'] ?? 'claude';
+        $preset     = $config['cli_harness_presets'][$presetNome] ?? $config['cli_harness_presets']['claude'] ?? [];
+        $harness    = array_merge($preset, $config['cli_harness'] ?? []);
+
+        // array_key_exists, NUNCA ?? — um preset pode setar uma chave como null de propósito (ex:
+        // gemini.dir_flag => null, porque não há flag de restrição de diretório confirmada na doc
+        // pra essa CLI). ?? trataria "existe e é null" igual a "não existe" e reintroduziria o
+        // default errado (ex: --add-dir do Claude Code CLI virando argumento de uma chamada gemini).
+        $valor = fn(string $chave, $default) => array_key_exists($chave, $harness) ? $harness[$chave] : $default;
+
+        return new CliHarnessAnalysisClient(
+            command: $valor('command', 'claude'),
+            extraArgs: $valor('extra_args', ['--output-format', 'json']),
+            responseFormat: $valor('response_format', 'single_json'),
+            resultField: $valor('result_field', 'result'),
+            costField: $valor('cost_field', 'total_cost_usd'),
+            timeoutSeconds: $valor('timeout', $config['timeout'] ?? 300),
+            allowedBasePath: $allowedBasePath,
+            harnessTools: $valor('harness_tools', ['Read', 'Grep', 'Glob']),
+            dirFlag: $valor('dir_flag', '--add-dir'),
+            toolsFlag: $valor('tools_flag', '--allowedTools'),
+        );
     }
 
     private function resolveExtraPromptRules(?string $value): ?string

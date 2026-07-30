@@ -15,25 +15,44 @@ class AnswerCommand extends Command
 {
     protected $signature = 'driftguard:answer
                             {model : Nome do model com pergunta pendente}
-                            {resposta* : Texto da resposta (várias palavras, sem precisar de aspas)}';
+                            {resposta* : Texto da resposta (várias palavras, sem precisar de aspas)}
+                            {--json : Saída em JSON em vez de texto}';
 
     protected $description = 'Responde a última pergunta pendente de um model (alternativa a editar questions.md)';
 
     public function handle(ModelSyncService $service): int
     {
+        $json     = (bool) $this->option('json');
         $modelo   = $this->argument('model');
         $resposta = trim(implode(' ', (array) $this->argument('resposta')));
 
         if ($resposta === '') {
-            $this->error('Informe o texto da resposta.');
+            if ($json) {
+                $this->line(json_encode(['status' => 'missing_answer_text']));
+            } else {
+                $this->error('Informe o texto da resposta.');
+            }
             return self::FAILURE;
         }
 
         $resultado = $service->answerQuestion($modelo, $resposta);
 
         if (!$resultado['found']) {
-            $this->warn("Nenhuma pergunta pendente (não respondida) encontrada para '{$modelo}'.");
+            if ($json) {
+                $this->line(json_encode(['status' => 'not_found', 'model' => $modelo]));
+            } else {
+                $this->warn("Nenhuma pergunta pendente (não respondida) encontrada para '{$modelo}'.");
+            }
             return self::FAILURE;
+        }
+
+        if ($json) {
+            $this->line(json_encode([
+                'status'   => 'answered',
+                'model'    => $modelo,
+                'question' => $resultado['question'],
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            return self::SUCCESS;
         }
 
         $this->info("✓ Resposta registrada para '{$modelo}': {$resultado['question']}");
