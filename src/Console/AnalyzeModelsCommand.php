@@ -11,7 +11,8 @@ class AnalyzeModelsCommand extends Command
                             {--force : Reanalisar todos os models independente de git diff}
                             {--model=* : Limitar análise a model(s) específico(s)}
                             {--dry-run : Mostra modo/models/prévia sem chamar o LLM}
-                            {--json : Saída em JSON em vez de tabela/progresso (implica saída não-interativa)}';
+                            {--json : Saída em JSON em vez de tabela/progresso (implica saída não-interativa)}
+                            {--full : Análise completa — ignora max_snippet_chars/max_total_snippet_chars/max_supporting_files, manda tudo inteiro}';
 
     protected $description = 'Usa um LLM (configurável) pra atualizar o catálogo de models a partir das mudanças no código';
 
@@ -83,7 +84,7 @@ class AnalyzeModelsCommand extends Command
 
         $result = $service->runAnalysis($modelsList, function () use ($bar) {
             $bar?->advance();
-        });
+        }, (bool) $this->option('full'));
 
         $bar?->finish();
         if (!$json) {

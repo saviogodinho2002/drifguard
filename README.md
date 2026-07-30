@@ -34,6 +34,7 @@ php artisan driftguard:doctor           # valida a config inteira (sem chamar o 
 php artisan driftguard:analyze --dry-run  # mostra modo/models/prévia, sem chamar o LLM
 php artisan driftguard:analyze          # analisa o que mudou desde a última rodada (git diff)
 php artisan driftguard:analyze --force  # reanalisa tudo
+php artisan driftguard:analyze --full   # ignora os orçamentos de contexto (manda tudo inteiro, sem corte)
 php artisan driftguard:apply --dry-run  # mostra o diff sem aplicar
 php artisan driftguard:apply            # aplica (pede confirmação)
 ```
@@ -121,6 +122,16 @@ Tudo em `config/driftguard.php`, publicado no seu próprio projeto — edite liv
   começando pelos de menor conteúdo extraído.
 - **`max_supporting_files`** (default 5) — teto de quantos arquivos de apoio são coletados por
   model, antes mesmo de montar o contexto.
+- **`--full`** (flag do `driftguard:analyze`, não é config) — ignora os 3 limites acima só na rodada
+  atual, mandando tudo inteiro. Não muda quais models entram (isso é `--force`/`--model`/diff
+  normal), só quanto conteúdo de cada um. Útil pra uma auditoria pontual ou a 1ª análise cuidadosa
+  de um model crítico, sem precisar mexer na config publicada só por causa dessa rodada.
+- **`request_method`** — quando um snippet do próprio model (ou de um arquivo de apoio) vem com
+  aviso de "método(s) descartado(s) por orçamento", a IA pode pedir de volta só os métodos
+  específicos que faltaram (os nomes exatos aparecem no aviso) em vez do arquivo inteiro — inclusive
+  vários de uma vez, numa única chamada. Complementa `request_file` (que pede o arquivo inteiro):
+  use `request_method` quando só falta método específico, `request_file` quando falta o arquivo
+  todo (ex: um arquivo que nem chegou a entrar no contexto).
 - **`allowed_base_path`** — diretório fora do qual a IA não pode ler arquivo via `request_file`
   durante a análise (default: raiz do projeto).
 - **`storage_path`** — default `base_path('driftguard')` (raiz do projeto), **de propósito fora de
@@ -190,8 +201,9 @@ autoritativo, ao lado de `context_docs`.
   (hash) e **não sobrescreve silenciosamente** — avisa e pula.
 - Campo que existe no catálogo mas saiu da sua spec atual (`fields`) é preservado verbatim na
   reescrita — nunca apagado silenciosamente.
-- `request_file` (a IA pedindo outro arquivo de código durante a análise) é restrito a
-  `allowed_base_path` — um path fora da raiz do projeto é recusado explicitamente, nunca lido.
+- `request_file`/`request_method` (a IA pedindo outro arquivo/método de código durante a análise)
+  são restritos a `allowed_base_path` — um path fora da raiz do projeto é recusado explicitamente,
+  nunca lido.
 
 ## Testando
 

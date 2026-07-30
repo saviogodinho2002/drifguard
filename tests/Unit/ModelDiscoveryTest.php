@@ -185,6 +185,114 @@ class ModelDiscoveryTest extends TestCase
         $this->assertArrayNotHasKey('comodosDisponiveis', $corpos);
     }
 
+    // ── extração precisa reconhecer QUALQUER assinatura de método ──────────────
+
+    private const ASSINATURAS_VARIADAS = <<<'PHP'
+    <?php
+    class Bicho
+    {
+        public function semRetorno()
+        {
+            return 1;
+        }
+
+        public function comRetornoUniao(): int|string
+        {
+            return 1;
+        }
+
+        public function comRetornoNamespaced(): \App\Models\Coisa
+        {
+            return new \App\Models\Coisa();
+        }
+
+        public function comRetornoIntersection(): \Countable&\ArrayAccess
+        {
+            return $this;
+        }
+
+        public static function estatico(): array
+        {
+            return [];
+        }
+    }
+    PHP;
+
+    public function test_extract_named_methods_recognizes_every_return_type_form_including_intersection(): void
+    {
+        $corpos = $this->discovery->extractNamedMethods(self::ASSINATURAS_VARIADAS, [
+            'semRetorno', 'comRetornoUniao', 'comRetornoNamespaced', 'comRetornoIntersection', 'estatico',
+        ]);
+
+        $this->assertArrayHasKey('semRetorno', $corpos);
+        $this->assertArrayHasKey('comRetornoUniao', $corpos);
+        $this->assertArrayHasKey('comRetornoNamespaced', $corpos);
+        $this->assertArrayHasKey('comRetornoIntersection', $corpos, 'tipo de retorno de interseção (PHP 8.1+, ex: Countable&ArrayAccess) não pode desaparecer silenciosamente da extração');
+        $this->assertArrayHasKey('estatico', $corpos);
+    }
+
+    // ── packWithinBudget() — nunca corta método no meio (regra D2) ─────────────
+
+    public function test_pack_within_budget_returns_everything_when_it_all_fits(): void
+    {
+        $corpos = ['a' => str_repeat('x', 100), 'b' => str_repeat('y', 100)];
+
+        $resultado = $this->discovery->packWithinBudget($corpos, 1000);
+
+        $this->assertStringContainsString(str_repeat('x', 100), $resultado);
+        $this->assertStringContainsString(str_repeat('y', 100), $resultado);
+        $this->assertStringNotContainsString('descartado', $resultado);
+    }
+
+    public function test_pack_within_budget_never_leaves_output_empty_even_when_single_method_exceeds_budget(): void
+    {
+        $corpos = ['unico' => str_repeat('u', 2000)];
+
+        $resultado = $this->discovery->packWithinBudget($corpos, 500);
+
+        $this->assertSame(2000, substr_count($resultado, 'u'), 'o método único inteiro tem que sobreviver, mesmo estourando o orçamento');
+    }
+
+    public function test_pack_within_budget_prioritizes_the_largest_method_then_backfills_smaller_ones(): void
+    {
+        $corpos = [
+            'm1' => str_repeat('1', 100),
+            'm2' => str_repeat('2', 200),
+            'm3' => str_repeat('3', 300),
+            'm4' => str_repeat('4', 400),
+        ];
+
+        $resultado = $this->discovery->packWithinBudget($corpos, 500);
+
+        // maior (m4=400) entra primeiro, sobra 100 -- m1 (100) faz backfill exato; m2/m3 não cabem mais
+        $this->assertStringContainsString(str_repeat('4', 400), $resultado);
+        $this->assertStringContainsString(str_repeat('1', 100), $resultado);
+        $this->assertStringNotContainsString(str_repeat('2', 200), $resultado);
+        $this->assertStringNotContainsString(str_repeat('3', 300), $resultado);
+        $this->assertStringContainsString('2 método(s) descartado(s)', $resultado);
+        // nomes exatos precisam aparecer no aviso, senão a IA não tem como pedir de volta via request_method
+        $this->assertStringContainsString('m3', $resultado);
+        $this->assertStringContainsString('m2', $resultado);
+        $this->assertStringContainsString('request_method', $resultado);
+    }
+
+    public function test_pack_within_budget_backfill_can_keep_many_small_methods_alongside_one_large(): void
+    {
+        $corpos = array_merge(
+            ['grande' => str_repeat('G', 5000)],
+            array_combine(
+                array_map(fn($i) => "pequeno{$i}", range(1, 10)),
+                array_fill(0, 10, str_repeat('p', 80)),
+            ),
+        );
+
+        $resultado = $this->discovery->packWithinBudget($corpos, 6000);
+
+        $this->assertSame(5000, substr_count($resultado, 'G'));
+        $this->assertSame(800, substr_count($resultado, 'p'), 'todos os 10 pequenos (80 cada) cabem no espaço que sobrou: 5000+800=5800<=6000');
+        $this->assertStringNotContainsString('descartado', $resultado);
+    }
+
     // ── supportingFilesForModel() — limite de nº de arquivos (regra D4) ────────
 
     public function test_supporting_files_for_model_stops_at_max_count(): void

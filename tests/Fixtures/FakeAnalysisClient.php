@@ -50,6 +50,19 @@ class FakeAnalysisClient implements AnalysisClient
         return $this;
     }
 
+    /** @param array<int, array{path: string, method: string}> $requests */
+    public function enqueueRequestMethod(array $requests): self
+    {
+        $this->fila[] = [
+            'content'    => null,
+            'tool_calls' => [[
+                'id'       => 'call_1',
+                'function' => ['name' => 'request_method', 'arguments' => json_encode(['requests' => $requests])],
+            ]],
+        ];
+        return $this;
+    }
+
     public function chat(array $messages, array $tools): array
     {
         $this->mensagensRecebidas[] = $messages;

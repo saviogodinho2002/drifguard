@@ -148,9 +148,13 @@ class ModelSyncService
 
     /**
      * @param string[] $models
+     * @param bool $analiseCompleta Ignora `maxSnippetChars`/`maxTotalSnippetChars`/`maxSupportingFiles`
+     *        pra esta rodada — manda tudo inteiro, sem extração/truncamento/corte de arquivo de
+     *        apoio (regra `--full`). Só afeta QUANTO CONTEÚDO de cada model entra, nunca QUAIS
+     *        models são analisados (isso continua sendo decidido por `resolveRunState()`).
      * @return array{proposals: array<string, array>, questions: array<int, array>}
      */
-    public function runAnalysis(array $models, callable $onProgress): array
+    public function runAnalysis(array $models, callable $onProgress, bool $analiseCompleta = false): array
     {
         $proposals = [];
         $questions = [];
@@ -164,7 +168,7 @@ class ModelSyncService
                 continue;
             }
 
-            $snippets = $this->gatherSnippets($modelo);
+            $snippets = $this->gatherSnippets($modelo, $analiseCompleta);
             $contextDoc = $this->contextDocs->resolveFor($modelo);
             $respostaAnterior = $respostas[$modelo] ?? null;
 
@@ -248,6 +252,23 @@ class ModelSyncService
                     $messages[] = ['role' => 'assistant', 'content' => null, 'tool_calls' => $toolCalls];
                     $messages[] = ['role' => 'tool', 'tool_call_id' => $chamada['id'] ?? '', 'content' => $conteudo];
                 }
+
+                if ($nome === 'request_method') {
+                    $porArquivo = [];
+                    foreach ($args['requests'] ?? [] as $pedido) {
+                        $porArquivo[$pedido['path'] ?? '']['metodos'][] = $pedido['method'] ?? '';
+                    }
+
+                    $conteudoTotal = [];
+                    foreach ($porArquivo as $path => ['metodos' => $metodos]) {
+                        $conteudo = $this->extrairMetodosComGuarda($path, $metodos);
+                        $snippets["{$path} (métodos pedidos: " . implode(', ', $metodos) . ')'] = $conteudo;
+                        $conteudoTotal[] = "--- {$path} ---\n{$conteudo}";
+                    }
+
+                    $messages[] = ['role' => 'assistant', 'content' => null, 'tool_calls' => $toolCalls];
+                    $messages[] = ['role' => 'tool', 'tool_call_id' => $chamada['id'] ?? '', 'content' => implode("\n\n", $conteudoTotal)];
+                }
             }
         }
 
@@ -290,8 +311,55 @@ class ModelSyncService
      */
     private function lerArquivoComGuarda(string $path): string
     {
+        $arquivoReal = $this->resolverDentroDaBase($path);
+        if ($arquivoReal === null) {
+            return $path === '' || !is_file($path)
+                ? "Arquivo não encontrado: {$path}"
+                : "Acesso negado: '{$path}' está fora do diretório permitido ({$this->allowedBasePath}).";
+        }
+
+        return file_get_contents($arquivoReal) ?: '';
+    }
+
+    /**
+     * Pede o corpo de métodos ESPECÍFICOS de um arquivo (item 1, `request_method`) — mesma guarda
+     * de `allowedBasePath` que `lerArquivoComGuarda()` já aplica, mas devolve só os métodos
+     * pedidos (via `ModelDiscovery::extractNamedMethods()`, já usado pelo `ModelIndex`) em vez do
+     * arquivo inteiro. Método pedido que não existe no arquivo nunca falha silenciosamente — a
+     * ausência vira parte da mensagem devolvida, pra IA não achar que recebeu algo que não veio.
+     *
+     * @param string[] $metodos
+     */
+    private function extrairMetodosComGuarda(string $path, array $metodos): string
+    {
+        $arquivoReal = $this->resolverDentroDaBase($path);
+        if ($arquivoReal === null) {
+            return $path === '' || !is_file($path)
+                ? "Arquivo não encontrado: {$path}"
+                : "Acesso negado: '{$path}' está fora do diretório permitido ({$this->allowedBasePath}).";
+        }
+
+        $conteudo = file_get_contents($arquivoReal) ?: '';
+        $corpos   = $this->discovery->extractNamedMethods($conteudo, $metodos);
+
+        $partes = [];
+        if (!empty($corpos)) {
+            $partes[] = implode("\n\n", $corpos);
+        }
+
+        $faltando = array_values(array_diff($metodos, array_keys($corpos)));
+        if (!empty($faltando)) {
+            $partes[] = 'Método(s) não encontrado(s) em ' . $path . ': ' . implode(', ', $faltando);
+        }
+
+        return implode("\n\n", $partes);
+    }
+
+    /** @return string|null Path real (resolvido) se dentro de `allowedBasePath`, ou null se recusado/inexistente. */
+    private function resolverDentroDaBase(string $path): ?string
+    {
         if ($path === '' || !is_file($path)) {
-            return "Arquivo não encontrado: {$path}";
+            return null;
         }
 
         $arquivoReal = realpath($path);
@@ -300,15 +368,11 @@ class ModelSyncService
         $dentroDaBase = $arquivoReal !== false && $baseReal !== false
             && ($arquivoReal === $baseReal || str_starts_with($arquivoReal, rtrim($baseReal, '/') . '/'));
 
-        if (!$dentroDaBase) {
-            return "Acesso negado: '{$path}' está fora do diretório permitido ({$this->allowedBasePath}).";
-        }
-
-        return file_get_contents($arquivoReal) ?: '';
+        return $dentroDaBase ? $arquivoReal : null;
     }
 
     /** @return array<string, string> caminho => conteúdo */
-    private function gatherSnippets(string $modelo): array
+    private function gatherSnippets(string $modelo, bool $analiseCompleta = false): array
     {
         $snippets  = [];
         $modelPath = $this->discovery->modelFilePath($modelo);
@@ -317,14 +381,15 @@ class ModelSyncService
         // sofre extração/truncamento quando realmente grande (regra D2).
         if ($modelPath) {
             $conteudo = file_get_contents($modelPath) ?: '';
-            $snippets[$modelPath] = $this->snippetDoModel($modelo, $conteudo);
+            $snippets[$modelPath] = $this->snippetDoModel($modelo, $conteudo, $analiseCompleta);
         }
 
-        foreach ($this->discovery->supportingFilesForModel($modelo, $this->maxSupportingFiles) as $path) {
-            $snippets[$path] = $this->snippetDeApoio($path, $modelo);
+        $maxArquivos = $analiseCompleta ? PHP_INT_MAX : $this->maxSupportingFiles;
+        foreach ($this->discovery->supportingFilesForModel($modelo, $maxArquivos) as $path) {
+            $snippets[$path] = $this->snippetDeApoio($path, $modelo, $analiseCompleta);
         }
 
-        return $this->aplicarOrcamentoTotal($snippets, $modelPath);
+        return $this->aplicarOrcamentoTotal($snippets, $modelPath, $analiseCompleta);
     }
 
     /**
@@ -334,33 +399,28 @@ class ModelSyncService
      * pro porquê da versão agressiva ter sido descartada). Reaproveita `ModelIndex` quando o
      * conteúdo não mudou desde a última rodada, em vez de reclassificar tudo de novo.
      */
-    private function snippetDoModel(string $modelo, string $conteudo): string
+    private function snippetDoModel(string $modelo, string $conteudo, bool $analiseCompleta = false): string
     {
-        if (mb_strlen($conteudo) <= $this->maxSnippetChars) {
+        if ($analiseCompleta || mb_strlen($conteudo) <= $this->maxSnippetChars) {
             return $conteudo;
         }
 
         if (!$this->modelIndex->isStale($modelo, $conteudo)) {
-            $indice   = $this->modelIndex->read($modelo);
-            $corpos   = $this->discovery->extractNamedMethods($conteudo, $indice['metodos_semente']);
-            $extraido = implode("\n\n", $corpos);
+            $indice = $this->modelIndex->read($modelo);
+            $corpos = $this->discovery->extractNamedMethods($conteudo, $indice['metodos_semente']);
         } else {
             $resultado = $this->discovery->extractSafeParts($conteudo);
-            $extraido  = implode("\n\n", $resultado['corpos']);
+            $corpos    = $resultado['corpos'];
             $this->modelIndex->write($modelo, [
                 'hash_arquivo'      => hash('sha256', $conteudo),
                 'atualizado_em'     => date(DATE_ATOM),
                 'metodos_semente'   => $resultado['semente'],
                 'tamanho_arquivo'   => strlen($conteudo),
-                'tamanho_extraido'  => strlen($extraido),
+                'tamanho_extraido'  => strlen(implode("\n\n", $corpos)),
             ]);
         }
 
-        if (mb_strlen($extraido) > $this->maxSnippetChars) {
-            return mb_substr($extraido, 0, $this->maxSnippetChars) . "\n... (truncado)";
-        }
-
-        return $extraido;
+        return $this->discovery->packWithinBudget($corpos, $this->maxSnippetChars);
     }
 
     /**
@@ -368,14 +428,18 @@ class ModelSyncService
      * não achar nenhum, cai pro conteúdo integral truncado em `maxSnippetChars` — nunca estoura sem
      * avisar (regra D).
      */
-    private function snippetDeApoio(string $path, string $modelo): string
+    private function snippetDeApoio(string $path, string $modelo, bool $analiseCompleta = false): string
     {
+        $conteudo = file_get_contents($path) ?: '';
+        if ($analiseCompleta) {
+            return $conteudo;
+        }
+
         $extraido = $this->discovery->extractRelevantMethods($path, $modelo);
         if ($extraido !== null) {
             return $extraido;
         }
 
-        $conteudo = file_get_contents($path) ?: '';
         if (mb_strlen($conteudo) > $this->maxSnippetChars) {
             return mb_substr($conteudo, 0, $this->maxSnippetChars) . "\n... (truncado)";
         }
@@ -391,8 +455,12 @@ class ModelSyncService
      * @param array<string, string> $snippets
      * @return array<string, string>
      */
-    private function aplicarOrcamentoTotal(array $snippets, ?string $modelPath): array
+    private function aplicarOrcamentoTotal(array $snippets, ?string $modelPath, bool $analiseCompleta = false): array
     {
+        if ($analiseCompleta) {
+            return $snippets;
+        }
+
         $total = array_sum(array_map('mb_strlen', $snippets));
         if ($total <= $this->maxTotalSnippetChars) {
             return $snippets;

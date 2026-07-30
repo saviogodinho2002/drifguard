@@ -201,6 +201,180 @@ class ModelSyncServiceIntegrationTest extends TestCase
         $this->assertStringContainsString('class Post extends Model', $conteudoTool);
     }
 
+    /** `request_method`: pede 1 método específico, recebe só o corpo dele — não o arquivo inteiro. */
+    public function test_request_method_returns_only_the_requested_method_body(): void
+    {
+        $modelPath = __DIR__ . '/../Fixtures/Models/Post.php';
+
+        $client = (new FakeAnalysisClient())
+            ->enqueueRequestMethod([['path' => $modelPath, 'method' => 'author']])
+            ->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y']);
+
+        $service = $this->makeService($client, allowedBasePath: __DIR__ . '/../Fixtures');
+
+        $service->runAnalysis(['Post'], fn() => null);
+
+        $conteudoTool = null;
+        foreach ($client->mensagensRecebidas[1] ?? [] as $m) {
+            if (($m['role'] ?? null) === 'tool') {
+                $conteudoTool = $m['content'];
+            }
+        }
+
+        $this->assertNotNull($conteudoTool);
+        $this->assertStringContainsString('belongsTo(Author::class)', $conteudoTool);
+        $this->assertStringNotContainsString('class Post extends Model', $conteudoTool, 'só o corpo do método deve vir, não a declaração da classe/arquivo inteiro');
+    }
+
+    /** `request_method`: pede métodos de arquivos DIFERENTES numa única chamada (lote). */
+    public function test_request_method_supports_batching_multiple_files_in_one_call(): void
+    {
+        // dentro de Fixtures (não sys_get_temp_dir()) — precisa estar sob o MESMO allowedBasePath
+        // que o arquivo do model (Fixtures/Models/Post.php), senão a guarda de path recusaria um
+        // dos dois lados do lote.
+        $dir = __DIR__ . '/../Fixtures/tmp_request_method_batch_' . uniqid();
+        mkdir($dir, 0755, true);
+        file_put_contents("{$dir}/PostController.php", <<<'PHP'
+        <?php
+        class PostController
+        {
+            public function index()
+            {
+                return Post::all();
+            }
+
+            public function show($id)
+            {
+                return Post::find($id);
+            }
+        }
+        PHP);
+
+        $modelPath = __DIR__ . '/../Fixtures/Models/Post.php';
+
+        $client = (new FakeAnalysisClient())
+            ->enqueueRequestMethod([
+                ['path' => $modelPath, 'method' => 'author'],
+                ['path' => "{$dir}/PostController.php", 'method' => 'show'],
+            ])
+            ->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y']);
+
+        $service = $this->makeService($client, allowedBasePath: __DIR__ . '/../Fixtures');
+
+        $service->runAnalysis(['Post'], fn() => null);
+
+        $conteudoTool = null;
+        foreach ($client->mensagensRecebidas[1] ?? [] as $m) {
+            if (($m['role'] ?? null) === 'tool') {
+                $conteudoTool = $m['content'];
+            }
+        }
+
+        $this->assertNotNull($conteudoTool);
+        $this->assertStringContainsString('belongsTo(Author::class)', $conteudoTool, 'método do model deveria vir numa chamada só');
+        $this->assertStringContainsString('Post::find($id)', $conteudoTool, 'método do arquivo de apoio deveria vir na MESMA chamada');
+        $this->assertStringNotContainsString('Post::all()', $conteudoTool, 'método NÃO pedido (index) não deveria vir');
+
+        array_map('unlink', glob("{$dir}/*.php") ?: []);
+        rmdir($dir);
+    }
+
+    /** `request_method`: método pedido que não existe no arquivo nunca falha silenciosamente. */
+    public function test_request_method_reports_missing_method_explicitly(): void
+    {
+        $modelPath = __DIR__ . '/../Fixtures/Models/Post.php';
+
+        $client = (new FakeAnalysisClient())
+            ->enqueueRequestMethod([['path' => $modelPath, 'method' => 'metodoQueNaoExiste']])
+            ->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y']);
+
+        $service = $this->makeService($client, allowedBasePath: __DIR__ . '/../Fixtures');
+
+        $service->runAnalysis(['Post'], fn() => null);
+
+        $conteudoTool = null;
+        foreach ($client->mensagensRecebidas[1] ?? [] as $m) {
+            if (($m['role'] ?? null) === 'tool') {
+                $conteudoTool = $m['content'];
+            }
+        }
+
+        $this->assertStringContainsString('não encontrado', $conteudoTool);
+        $this->assertStringContainsString('metodoQueNaoExiste', $conteudoTool);
+    }
+
+    /** `request_method` respeita a mesma guarda de `allowed_base_path` que `request_file` já tem. */
+    public function test_request_method_outside_allowed_base_path_is_refused_not_read(): void
+    {
+        $tmpSecreto = tempnam(sys_get_temp_dir(), 'driftguard_secreto_');
+        file_put_contents($tmpSecreto, "<?php\nclass X { public function segredo() { return 'SEGREDO_NAO_DEVE_VAZAR'; } }");
+
+        $client = (new FakeAnalysisClient())
+            ->enqueueRequestMethod([['path' => $tmpSecreto, 'method' => 'segredo']])
+            ->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y']);
+
+        $service = $this->makeService($client, allowedBasePath: __DIR__ . '/../Fixtures');
+
+        $service->runAnalysis(['Post'], fn() => null);
+
+        $conteudoTool = null;
+        foreach ($client->mensagensRecebidas[1] ?? [] as $m) {
+            if (($m['role'] ?? null) === 'tool') {
+                $conteudoTool = $m['content'];
+            }
+        }
+
+        $this->assertStringContainsString('Acesso negado', $conteudoTool);
+        $this->assertStringNotContainsString('SEGREDO_NAO_DEVE_VAZAR', $conteudoTool);
+
+        @unlink($tmpSecreto);
+    }
+
+    /** `--full` (analiseCompleta): manda o arquivo do model INTEIRO, sem extração nem truncamento. */
+    public function test_full_analysis_mode_sends_entire_model_file_without_extraction(): void
+    {
+        $client = (new FakeAnalysisClient())->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y']);
+
+        // maxSnippetChars minúsculo forçaria extração/truncamento normalmente
+        $service = $this->makeService($client, maxSnippetChars: 5);
+
+        $service->runAnalysis(['Post'], fn() => null, analiseCompleta: true);
+
+        $conteudoUsuario = $client->mensagensRecebidas[0][1]['content'];
+
+        $this->assertStringContainsString('class Post extends Model', $conteudoUsuario, 'arquivo inteiro deveria ir, mesmo maior que maxSnippetChars');
+        $this->assertStringNotContainsString('descartado', $conteudoUsuario);
+        $this->assertStringNotContainsString('truncado', $conteudoUsuario);
+
+        // --full não deveria gravar/depender do ModelIndex (extração inteira é pulada)
+        $this->assertFileDoesNotExist("{$this->tmpStorage}/index/Post.json");
+    }
+
+    /** `--full` ignora o orçamento total combinado — arquivo de apoio não é descartado. */
+    public function test_full_analysis_mode_ignores_combined_budget(): void
+    {
+        $dir = sys_get_temp_dir() . '/driftguard_full_budget_test_' . uniqid();
+        mkdir($dir, 0755, true);
+        file_put_contents("{$dir}/PostController.php", "<?php\nclass PostController {\n    public function x() {\n        return Post::all();\n    }\n}");
+
+        $client = (new FakeAnalysisClient())->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y']);
+
+        $service = $this->makeService(
+            $client,
+            supportingPaths: [$dir],
+            maxTotalSnippetChars: 1, // orçamento absurdo — sem --full descartaria o arquivo de apoio
+        );
+
+        $service->runAnalysis(['Post'], fn() => null, analiseCompleta: true);
+
+        $conteudoUsuario = $client->mensagensRecebidas[0][1]['content'];
+
+        $this->assertStringContainsString('PostController', $conteudoUsuario, '--full deveria ignorar o orçamento total combinado');
+
+        array_map('unlink', glob("{$dir}/*.php") ?: []);
+        rmdir($dir);
+    }
+
     /**
      * Achado do relatório real de produção: campo scope_class mal formado (nomes de variável
      * errados) recebe 1 chance de correção, com o erro específico + o contrato de formato

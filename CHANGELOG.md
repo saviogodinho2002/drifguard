@@ -3,6 +3,66 @@
 Todas as mudanças notáveis deste projeto são documentadas aqui. Formato baseado em
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [0.6.0] - 2026-07-30
+
+Motivado por 2 perguntas sobre o que ainda falta quando o orçamento por model não é suficiente: se
+a IA consegue pedir de volta um método específico que foi descartado, e se existe um jeito de pagar
+o custo total numa rodada só quando vale a pena (auditoria, 1ª análise cuidadosa de um model
+crítico).
+
+### Fixed
+- Tipo de retorno de **interseção** (`): Countable&ArrayAccess`, PHP 8.1+) não era reconhecido pelo
+  regex compartilhado de extração de método (`ModelDiscovery::extractMethodBodies()`/
+  `extractRelevantMethods()`) — um método com essa assinatura desaparecia silenciosamente de
+  QUALQUER extração (`extractSafeParts`, `extractNamedMethods`, `extractRelevantMethods`), não só
+  do recurso novo abaixo. Achado testando exaustivamente as formas de assinatura possíveis (sem
+  retorno, escalar, nulável, união, array/iterable, namespaced, interseção, estático, visibilidade
+  implícita/explícita) antes de escrever `request_method`. Regressão checada contra os 5 models
+  reais usados nesta sessão — contagem de métodos extraídos idêntica antes/depois, confirma que o
+  fix é estritamente aditivo.
+- `packWithinBudget()` (v0.5.1) passa a **nomear** os métodos descartados no aviso (antes só dizia
+  "N método(s) descartado(s)", sem dizer quais) — sem os nomes exatos, não haveria como a IA saber
+  o que pedir de volta via `request_method`.
+
+### Added
+- **`request_method`** — nova tool de tool-calling: pede o corpo de um ou mais métodos específicos
+  que não vieram completos no contexto, sem precisar do arquivo inteiro (antes só existia
+  `request_file`, granularidade de arquivo). Aceita uma LISTA (`requests: [{path, method}, ...]`) —
+  pode pedir vários métodos, inclusive de arquivos diferentes, numa única chamada, já que o número
+  de rodadas de análise por model é limitado (`MAX_ANALYSIS_ITER = 4`, compartilhado entre todas as
+  tools). Método pedido que não existe no arquivo nunca falha silenciosamente — vira mensagem
+  explícita ("método(s) não encontrado(s)"). Mesma guarda de `allowed_base_path` que `request_file`
+  já aplica. Novo `PromptBuilder::regrasRequestMethod()` (sempre incluída no system prompt, não só
+  quando há campo `scope_class`) instrui a IA a usar os nomes exatos do aviso de descarte e a
+  batelar pedidos em vez de 1 chamada por método.
+- **`--full`** em `driftguard:analyze` — ignora `max_snippet_chars`/`max_total_snippet_chars`/
+  `max_supporting_files` só nesta rodada, mandando cada model (e seus arquivos de apoio) inteiro,
+  sem extração/truncamento/corte. Não muda QUAIS models são analisados (isso continua vindo de
+  `--force`/`--model`/diff normal) — só QUANTO CONTEÚDO de cada um entra. Composição confirmada
+  contra `AnalyzeModelsCommand::handle()`: funciona igual sobre o modo `diff` padrão (reanalisa só
+  o que mudou, mas sem cortar nada) ou combinado com `--force` (tudo, sem corte nenhum — o caso de
+  auditoria).
+
+## [0.5.1] - 2026-07-30
+
+Depois do `extractSafeParts()` (v0.5.0), medi contra os mesmos 5 models reais o que acontecia
+DEPOIS da extração: o truncamento por posição bruta (`mb_substr`) que rodava em seguida ainda
+cortava a maior parte do conteúdo já reduzido, e no meio de um método, sem critério — só uns
+13-35% do arquivo original chegava na IA.
+
+### Fixed
+- `ModelDiscovery::packWithinBudget()` (novo, movido de dentro de `ModelSyncService` — lógica pura
+  de empacotamento, sem depender de nada do serviço) substitui o truncamento por posição: nunca
+  corta um método no meio. Testei 2 estratégias antes de fechar (menor-primeiro "amplitude" e
+  maior-primeiro "profundidade") — a de manter o maior primeiro e fazer *backfill* dos menores no
+  espaço que sobra venceu nas 5 vezes na medição real de bytes retidos, incluindo ganho de
+  amplitude de bônus quando sobra espaço. Se um único método já estoura o orçamento sozinho, entra
+  inteiro mesmo assim — nunca fica vazio, nunca corta no meio.
+
+Resultado medido nos mesmos 5 models: ganhos de +0.2 a +28.2 pontos percentuais na retenção do
+arquivo original chegando na IA (faixa foi de 13%-58% para 15%-58%) — sem
+regressão em nenhum.
+
 ## [0.5.0] - 2026-07-30
 
 Motivado por relato de uso real: alguns models (segundo projeto externo) são grandes o bastante

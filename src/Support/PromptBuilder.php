@@ -48,6 +48,8 @@ class PromptBuilder
             $partes[] = $regrasScopeClass;
         }
 
+        $partes[] = $this->regrasRequestMethod();
+
         if ($this->extraPromptRules) {
             $partes[] = $this->extraPromptRules;
         }
@@ -71,6 +73,22 @@ class PromptBuilder
 
         return "Contrato OBRIGATÓRIO de formato pros campos do tipo scope_class ({$nomes}): "
             . FieldSpec::SCOPE_CLASS_FORMAT_CONTRACT;
+    }
+
+    /**
+     * Sempre incluída (ao contrário de `regrasScopeClass()`) — qualquer model pode ter conteúdo
+     * descartado por orçamento (`ModelDiscovery::packWithinBudget()`), não só quem tem campo
+     * scope_class configurado. Sem isso, a IA não sabe que `request_method` existe
+     * preferencialmente a `request_file`, nem que pode/deve pedir vários métodos numa só chamada.
+     */
+    private function regrasRequestMethod(): string
+    {
+        return "Se um snippet vier com aviso \"método(s) descartado(s) por orçamento\", os NOMES "
+            . "exatos estão listados no próprio aviso — use request_method com esses nomes (nunca "
+            . "invente nome de método). Se precisar de mais de 1 método, peça todos numa ÚNICA "
+            . "chamada de request_method (campo `requests` aceita lista) em vez de uma chamada por "
+            . "método — o número de rodadas de análise é limitado. Prefira request_method a "
+            . "request_file quando só faltam métodos específicos, não o arquivo inteiro.";
     }
 
     private function regrasPorCampo(): string
@@ -123,6 +141,35 @@ class PromptBuilder
                         'type'       => 'object',
                         'properties' => ['path' => ['type' => 'string', 'description' => 'Caminho relativo do arquivo desejado.']],
                         'required'   => ['path'],
+                    ],
+                ],
+            ],
+            [
+                'type'     => 'function',
+                'function' => [
+                    'name'        => 'request_method',
+                    'description' => 'Pede o corpo de um ou mais métodos específicos que não vieram '
+                        . 'completos no contexto (descartados por orçamento — os nomes exatos '
+                        . 'aparecem no aviso do snippet). Pode pedir VÁRIOS métodos numa única '
+                        . 'chamada. Use em vez de request_file quando só faltam métodos específicos, '
+                        . 'não o arquivo todo.',
+                    'parameters'  => [
+                        'type'       => 'object',
+                        'properties' => [
+                            'requests' => [
+                                'type'        => 'array',
+                                'description' => 'Lista de métodos a pedir, cada um com o path do arquivo e o nome exato do método.',
+                                'items'       => [
+                                    'type'       => 'object',
+                                    'properties' => [
+                                        'path'   => ['type' => 'string', 'description' => 'Caminho do arquivo (o mesmo do cabeçalho do snippet).'],
+                                        'method' => ['type' => 'string', 'description' => 'Nome exato do método desejado.'],
+                                    ],
+                                    'required'   => ['path', 'method'],
+                                ],
+                            ],
+                        ],
+                        'required'   => ['requests'],
                     ],
                 ],
             ],

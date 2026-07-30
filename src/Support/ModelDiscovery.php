@@ -106,7 +106,7 @@ class ModelDiscovery
         $termo   = preg_quote($modelo, '/');
         $blocos  = [];
         $offset  = 0;
-        $padrao  = '/(?:public|protected|private)?\s*function\s+\w+\s*\([^)]*\)\s*(?::\s*\??[\w\\\\|]+\s*)?\{/';
+        $padrao  = '/(?:public|protected|private)?\s*function\s+\w+\s*\([^)]*\)\s*(?::\s*\??[\w\\\\|&]+\s*)?\{/';
 
         while (preg_match($padrao, $conteudo, $m, PREG_OFFSET_CAPTURE, $offset)) {
             $inicioAssinatura = $m[0][1];
@@ -182,10 +182,58 @@ class ModelDiscovery
         return array_intersect_key($corpos, array_flip($nomes));
     }
 
+    /**
+     * Empacota um conjunto de corpos de método dentro de um orçamento de caracteres, SEM NUNCA
+     * cortar um método no meio (regra D2 — truncamento por posição bruta corta sem critério; isso
+     * descarta método inteiro em vez disso).
+     *
+     * Estratégia "maior primeiro + backfill", validada contra 5 models reais e grandes antes de
+     * escolher: pega o método mais denso primeiro (tende a concentrar lógica de negócio real —
+     * confirmado nos testes), depois tenta encaixar os menores no espaço que sobrar (backfill) —
+     * ganha amplitude de bônus sem sacrificar o que mais importa. Bateu a alternativa (menor
+     * primeiro) nas 5 vezes na medição real de bytes retidos.
+     *
+     * Nunca fica vazio: se o próprio maior já estoura o orçamento sozinho, entra inteiro mesmo
+     * assim (aceita estourar — a alternativa seria cortar ele no meio, que é o que isso evita).
+     *
+     * @param array<string, string> $corpos nome do método => corpo
+     */
+    public function packWithinBudget(array $corpos, int $maxChars): string
+    {
+        $total = array_sum(array_map('mb_strlen', $corpos));
+        if ($total <= $maxChars) {
+            return implode("\n\n", $corpos);
+        }
+
+        uasort($corpos, fn($a, $b) => mb_strlen($b) <=> mb_strlen($a));
+
+        $nomes        = array_keys($corpos);
+        $primeiroNome = array_shift($nomes);
+        $mantidos     = [$primeiroNome => $corpos[$primeiroNome]];
+        $acumulado    = mb_strlen($corpos[$primeiroNome]);
+
+        foreach ($nomes as $nome) {
+            $tamanho = mb_strlen($corpos[$nome]);
+            if ($acumulado + $tamanho > $maxChars) {
+                continue;
+            }
+            $mantidos[$nome] = $corpos[$nome];
+            $acumulado += $tamanho;
+        }
+
+        $nomesDescartados = array_values(array_diff(array_keys($corpos), array_keys($mantidos)));
+        $aviso = $nomesDescartados !== []
+            ? "\n... (" . count($nomesDescartados) . " método(s) descartado(s) por orçamento: "
+                . implode(', ', $nomesDescartados) . " — peça via request_method se precisar)"
+            : '';
+
+        return implode("\n\n", $mantidos) . $aviso;
+    }
+
     /** @return array{corpos: array<string,string>, visibilidades: array<string,string>} */
     private function extractMethodBodies(string $conteudo): array
     {
-        $padrao = '/(public|protected|private)?\s*(static\s+)?function\s+(\w+)\s*\([^)]*\)\s*(?::\s*\??[\w\\\\|]+\s*)?\{/';
+        $padrao = '/(public|protected|private)?\s*(static\s+)?function\s+(\w+)\s*\([^)]*\)\s*(?::\s*\??[\w\\\\|&]+\s*)?\{/';
         $offset = 0;
         $corpos = [];
         $visibilidades = [];
