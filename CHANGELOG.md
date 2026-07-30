@@ -3,6 +3,21 @@
 Todas as mudanças notáveis deste projeto são documentadas aqui. Formato baseado em
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [0.6.1] - 2026-07-30
+
+Estudei o [docudoodle](https://github.com/genericmilk/docudoodle) (gerador de docs Laravel via LLM)
+procurando algo aproveitável — nada na parte de contexto/chunking (é arquivo inteiro + corte cego
+por char count, o design atual do driftguard já é mais sofisticado), mas o mecanismo de detectar
+`.md` órfão quando o source some (`array_diff` entre arquivos cacheados e encontrados) inspirou o
+item abaixo, adaptado: o driftguard nunca apaga sozinho (o catálogo é curado à mão), só reporta.
+
+### Added
+- `driftguard:doctor` detecta entrada em `config/models.php` cujo model já não existe mais em
+  `models_path` (renomeado, movido ou apagado) — nível `WARN`, nunca falha o exit code. Construído
+  direto com `ModelDiscovery` (sem depender do singleton `ModelSyncService`, que constrói
+  `FieldSpec` eagerly no factory do container — um field malformado já quebraria a resolução antes
+  do próprio `doctor` conseguir reportar isso com seu try/catch de sempre).
+
 ## [0.6.0] - 2026-07-30
 
 Motivado por 2 perguntas sobre o que ainda falta quando o orçamento por model não é suficiente: se

@@ -5,6 +5,7 @@ namespace Saviogodinho2002\DriftGuard\Console;
 use Illuminate\Console\Command;
 use InvalidArgumentException;
 use Saviogodinho2002\DriftGuard\Support\FieldSpec;
+use Saviogodinho2002\DriftGuard\Support\ModelDiscovery;
 
 /**
  * Valida config('driftguard.*') sem chamar o LLM (regra A) — pra pegar campo malformado, path
@@ -49,6 +50,33 @@ class DoctorCommand extends Command
         } else {
             $checks[] = ['FAIL', 'models_path', "diretório não encontrado: {$modelsPath}"];
             $falhou = true;
+        }
+
+        // Estudado a partir do docudoodle (github.com/genericmilk/docudoodle): ele apaga o .md
+        // órfão sozinho quando o source some — não dá pra fazer isso aqui (config/models.php é
+        // curado à mão, "campo que saiu da spec é preservado, nunca apagado silenciosamente" já é
+        // regra documentada), então só REPORTA — a decisão fica com um humano. Construído direto
+        // (sem passar por ModelSyncService, que constrói FieldSpec eagerly no factory do container
+        // — um field malformado já quebraria a resolução ANTES do try/catch acima rodar) pra doctor
+        // continuar seguro de rodar mesmo com config quebrada em outro lugar.
+        if ($modelsPath && is_dir($modelsPath)) {
+            $discovery = new ModelDiscovery(
+                modelsPath: $modelsPath,
+                modelNamespace: $config['model_namespace'] ?? 'App\\Models',
+                supportingPaths: [],
+            );
+            $descobertos = $discovery->allModelNames();
+
+            $outputPathParaOrfaos = $config['output_path'] ?? '';
+            $catalogados = ($outputPathParaOrfaos && is_file($outputPathParaOrfaos))
+                ? array_keys((array) include $outputPathParaOrfaos)
+                : [];
+
+            $orfaos = array_values(array_diff($catalogados, $descobertos));
+            foreach ($orfaos as $modelo) {
+                $checks[] = ['WARN', 'catálogo', "'{$modelo}' está em " . ($outputPathParaOrfaos ?: 'config/models.php')
+                    . " mas não existe mais em models_path — model renomeado/movido/apagado? revise manualmente."];
+            }
         }
 
         foreach ($config['supporting_paths'] ?? [] as $path) {

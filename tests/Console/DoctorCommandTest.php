@@ -17,6 +17,7 @@ class DoctorCommandTest extends TestCase
         $this->tmpOutputConfig = sys_get_temp_dir() . '/driftguard_doctor_models_' . uniqid() . '.php';
 
         config(['driftguard.models_path'  => $this->fixturesPath('Models')]);
+        config(['driftguard.model_namespace' => 'Saviogodinho2002\\DriftGuard\\Tests\\Fixtures\\Models']);
         config(['driftguard.output_path'  => $this->tmpOutputConfig]);
         config(['driftguard.storage_path' => $this->tmpStorage]);
         config(['driftguard.fields'       => []]);
@@ -46,6 +47,33 @@ class DoctorCommandTest extends TestCase
 
         $this->assertSame(1, $exitCode);
         $this->assertStringContainsString('inválido', Artisan::output());
+    }
+
+    /**
+     * Inspirado no docudoodle (detecta doc órfão quando o source some) — mas aqui só REPORTA
+     * (WARN, nunca FAIL): config/models.php é dado curado à mão, apagar sozinho quebraria a
+     * garantia já documentada de "campo que sai da spec é preservado, nunca apagado silenciosamente".
+     */
+    public function test_warns_on_orphaned_catalog_entry_whose_model_no_longer_exists(): void
+    {
+        file_put_contents($this->tmpOutputConfig, "<?php\nreturn ['ModeloFantasma' => ['descricao' => 'x'], 'Post' => ['descricao' => 'y']];\n");
+
+        $exitCode = Artisan::call('driftguard:doctor');
+        $output   = Artisan::output();
+
+        $this->assertSame(0, $exitCode, 'órfão é WARN, nunca deveria falhar o exit code');
+        $this->assertStringContainsString('ModeloFantasma', $output);
+        $this->assertStringContainsString('revise manualmente', $output);
+    }
+
+    public function test_no_orphan_warning_when_every_catalogued_model_still_exists(): void
+    {
+        file_put_contents($this->tmpOutputConfig, "<?php\nreturn ['Post' => ['descricao' => 'x'], 'Author' => ['descricao' => 'y']];\n");
+
+        $exitCode = Artisan::call('driftguard:doctor');
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringNotContainsString('revise manualmente', Artisan::output());
     }
 
     public function test_fails_on_nonexistent_models_path(): void
