@@ -7,6 +7,7 @@ use Saviogodinho2002\DriftGuard\Support\ConfigWriter;
 use Saviogodinho2002\DriftGuard\Support\ContextDocsResolver;
 use Saviogodinho2002\DriftGuard\Support\FieldSpec;
 use Saviogodinho2002\DriftGuard\Support\ModelDiscovery;
+use Saviogodinho2002\DriftGuard\Support\ModelIndex;
 use Saviogodinho2002\DriftGuard\Support\ModelReflector;
 use Saviogodinho2002\DriftGuard\Support\PromptBuilder;
 use Saviogodinho2002\DriftGuard\Support\ScopeClassWriter;
@@ -23,6 +24,9 @@ class ModelSyncService
     /** Diretório que `request_file` pode ler — fora daqui, recusa (regra F). */
     private readonly string $allowedBasePath;
 
+    /** Índice persistido por model — evita recomputar `extractSafeParts()` quando o arquivo não mudou. */
+    private readonly ModelIndex $modelIndex;
+
     public function __construct(
         private readonly AnalysisClient $client,
         private readonly ModelDiscovery $discovery,
@@ -38,11 +42,16 @@ class ModelSyncService
         /** Teto de tamanho (chars) pra um arquivo de apoio sem extração de método (regra D). */
         private readonly int $maxSnippetChars = 6000,
         ?string $allowedBasePath = null,
+        /** Soma de TODOS os snippets de 1 model (model + apoio) — nunca descarta o arquivo do model. */
+        private readonly int $maxTotalSnippetChars = 60000,
+        /** Nº máximo de arquivos de apoio coletados por model. */
+        private readonly int $maxSupportingFiles = 5,
     ) {
         if (!is_dir($this->storagePath)) {
             mkdir($this->storagePath, 0755, true);
         }
         $this->allowedBasePath = $allowedBasePath ?? (getcwd() ?: '/');
+        $this->modelIndex = new ModelIndex($this->storagePath);
     }
 
     // ── Descoberta ───────────────────────────────────────────────────────────
@@ -301,19 +310,57 @@ class ModelSyncService
     /** @return array<string, string> caminho => conteúdo */
     private function gatherSnippets(string $modelo): array
     {
-        $snippets = [];
-
-        // arquivo do próprio model é a fonte primária — sempre inteiro, nunca truncado (regra D)
+        $snippets  = [];
         $modelPath = $this->discovery->modelFilePath($modelo);
+
+        // arquivo do próprio model é a fonte primária — nunca descartado no orçamento total, e só
+        // sofre extração/truncamento quando realmente grande (regra D2).
         if ($modelPath) {
-            $snippets[$modelPath] = file_get_contents($modelPath) ?: '';
+            $conteudo = file_get_contents($modelPath) ?: '';
+            $snippets[$modelPath] = $this->snippetDoModel($modelo, $conteudo);
         }
 
-        foreach ($this->discovery->supportingFilesForModel($modelo) as $path) {
+        foreach ($this->discovery->supportingFilesForModel($modelo, $this->maxSupportingFiles) as $path) {
             $snippets[$path] = $this->snippetDeApoio($path, $modelo);
         }
 
-        return $snippets;
+        return $this->aplicarOrcamentoTotal($snippets, $modelPath);
+    }
+
+    /**
+     * Arquivo do próprio model: só extrai/trunca quando maior que `maxSnippetChars` — pequeno
+     * continua indo inteiro, sem custo/risco de extração (regra D2). Extração SEGURA (mantém todo
+     * método público, só remove overrides do Eloquent — ver `ModelDiscovery::extractSafeParts()`
+     * pro porquê da versão agressiva ter sido descartada). Reaproveita `ModelIndex` quando o
+     * conteúdo não mudou desde a última rodada, em vez de reclassificar tudo de novo.
+     */
+    private function snippetDoModel(string $modelo, string $conteudo): string
+    {
+        if (mb_strlen($conteudo) <= $this->maxSnippetChars) {
+            return $conteudo;
+        }
+
+        if (!$this->modelIndex->isStale($modelo, $conteudo)) {
+            $indice   = $this->modelIndex->read($modelo);
+            $corpos   = $this->discovery->extractNamedMethods($conteudo, $indice['metodos_semente']);
+            $extraido = implode("\n\n", $corpos);
+        } else {
+            $resultado = $this->discovery->extractSafeParts($conteudo);
+            $extraido  = implode("\n\n", $resultado['corpos']);
+            $this->modelIndex->write($modelo, [
+                'hash_arquivo'      => hash('sha256', $conteudo),
+                'atualizado_em'     => date(DATE_ATOM),
+                'metodos_semente'   => $resultado['semente'],
+                'tamanho_arquivo'   => strlen($conteudo),
+                'tamanho_extraido'  => strlen($extraido),
+            ]);
+        }
+
+        if (mb_strlen($extraido) > $this->maxSnippetChars) {
+            return mb_substr($extraido, 0, $this->maxSnippetChars) . "\n... (truncado)";
+        }
+
+        return $extraido;
     }
 
     /**
@@ -334,6 +381,38 @@ class ModelSyncService
         }
 
         return $conteudo;
+    }
+
+    /**
+     * Orçamento total combinado (regra D3, espelha MAX_TOTAL_CHARS do sistema original): se a soma
+     * de todos os snippets de 1 model estourar, descarta arquivo de APOIO (nunca o do model)
+     * começando pelo de MENOR conteúdo — sinal de que teve menos relevância extraída dele.
+     *
+     * @param array<string, string> $snippets
+     * @return array<string, string>
+     */
+    private function aplicarOrcamentoTotal(array $snippets, ?string $modelPath): array
+    {
+        $total = array_sum(array_map('mb_strlen', $snippets));
+        if ($total <= $this->maxTotalSnippetChars) {
+            return $snippets;
+        }
+
+        $apoio = $snippets;
+        if ($modelPath !== null) {
+            unset($apoio[$modelPath]);
+        }
+        uasort($apoio, fn($a, $b) => mb_strlen($a) <=> mb_strlen($b));
+
+        foreach (array_keys($apoio) as $path) {
+            if ($total <= $this->maxTotalSnippetChars) {
+                break;
+            }
+            $total -= mb_strlen($snippets[$path]);
+            unset($snippets[$path]);
+        }
+
+        return $snippets;
     }
 
     // ── Persistência (context.json / proposal.php / questions.md) ───────────

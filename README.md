@@ -110,10 +110,17 @@ Tudo em `config/driftguard.php`, publicado no seu próprio projeto — edite liv
   o que reflection já determina. Veja o que está resolvido com `driftguard:context:list`.
 - **`extra_prompt_rules`** — meta-instrução de formato/convenção específica do seu app (não é
   conhecimento de negócio por model — isso é `context_docs`).
-- **`max_snippet_chars`** — teto de tamanho pra um arquivo de apoio (controller/service) sem método
-  extraível — o pacote tenta primeiro extrair só os métodos que mencionam o model; se não achar
-  nenhum, trunca no teto em vez de mandar o arquivo inteiro. O arquivo do próprio model nunca é
-  truncado.
+- **`max_snippet_chars`** — teto de tamanho pra um arquivo (apoio OU o próprio model) acima do qual
+  o pacote tenta extrair só a parte relevante antes de mandar tudo. Pro arquivo de apoio, extrai só
+  os métodos que mencionam o model. Pro arquivo do PRÓPRIO model, tenta extração SEGURA primeiro
+  (mantém todo método público — nunca corta regra de negócio real, só remove overrides do Eloquent
+  puramente boilerplate). Em qualquer um dos dois, se ainda estourar depois de tentar extrair, cai
+  pro conteúdo truncado com aviso — nunca estoura sem avisar.
+- **`max_total_snippet_chars`** (default 60000) — orçamento combinado somando TODOS os snippets de
+  1 model (arquivo do model + apoio); se estourar, descarta arquivo de apoio (nunca o do model)
+  começando pelos de menor conteúdo extraído.
+- **`max_supporting_files`** (default 5) — teto de quantos arquivos de apoio são coletados por
+  model, antes mesmo de montar o contexto.
 - **`allowed_base_path`** — diretório fora do qual a IA não pode ler arquivo via `request_file`
   durante a análise (default: raiz do projeto).
 - **`storage_path`** — default `base_path('driftguard')` (raiz do projeto), **de propósito fora de
@@ -131,10 +138,12 @@ regra de tenant realmente mora no seu app — e isso varia. Dois princípios aju
 instrução:
 
 **1. O que já está garantido no contexto, sem precisar pedir.**
-O arquivo do próprio model sempre entra inteiro (`gatherSnippets()` trata ele como fonte primária,
-nunca truncado) — então "olhe global scopes (`booted()`/`addGlobalScope`), scopes locais
-(`scopeXxx()`), e relações que já implicam tenant (`belongsTo(Empresa::class)`)" a IA já tem material
-pra fazer sozinha. Não precisa instruir isso, é estrutural.
+O arquivo do próprio model entra inteiro sempre que cabe no orçamento (`max_snippet_chars`); acima
+disso, a extração segura **sempre preserva** `booted()`/`addGlobalScope`, scopes locais
+(`scopeXxx()`) e métodos de relação (são públicos — a extração segura nunca corta método público)
+— então "olhe global scopes, scopes locais, e relações que já implicam tenant
+(`belongsTo(Empresa::class)`)" a IA já tem material pra fazer sozinha de qualquer forma. Não
+precisa instruir isso, é estrutural.
 
 **2. O que não está garantido — e onde configurar, não instruir.**
 Arquivos de apoio só entram se estiverem em `supporting_paths` **e** referenciarem o model

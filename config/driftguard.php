@@ -139,14 +139,35 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Orçamento de contexto por arquivo de apoio
+    | Orçamento de contexto por arquivo
     |--------------------------------------------------------------------------
-    | Um controller/service grande pode estourar contexto/custo rápido. O pacote
-    | tenta primeiro extrair só os métodos que mencionam o model; se não achar
-    | nenhum, cai pro conteúdo integral truncado neste teto (chars). O arquivo do
-    | PRÓPRIO model nunca é truncado — é sempre a fonte primária.
+    | Um controller/service grande pode estourar contexto/custo rápido. Pro arquivo de apoio, o
+    | pacote tenta primeiro extrair só os métodos que mencionam o model. Pro arquivo do PRÓPRIO
+    | model, abaixo deste teto vai sempre inteiro (é a fonte primária); acima dele, tenta extração
+    | SEGURA primeiro (mantém todo método público, só remove overrides do Eloquent — nunca corta
+    | regra de negócio real). Em qualquer um dos dois casos, se ainda estourar depois de tentar
+    | extrair, cai pro conteúdo truncado neste teto (chars) com aviso — nunca estoura sem avisar.
     */
     'max_snippet_chars' => 6000,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Orçamento total combinado por model
+    |--------------------------------------------------------------------------
+    | Soma de TODOS os snippets de um model (arquivo do model + todo arquivo de apoio) — se
+    | estourar, descarta arquivo de apoio (nunca o do próprio model) começando pelo de menor
+    | conteúdo extraído. Espelha o MAX_TOTAL_CHARS do sistema original.
+    */
+    'max_total_snippet_chars' => 60000,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Nº máximo de arquivos de apoio por model
+    |--------------------------------------------------------------------------
+    | Um model referenciado em muitos controllers/services pode estourar contexto rápido. Espelha
+    | o MAX_RELATED_FILES do sistema original.
+    */
+    'max_supporting_files' => 5,
 
     /*
     |--------------------------------------------------------------------------

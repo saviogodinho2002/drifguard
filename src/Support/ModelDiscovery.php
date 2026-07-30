@@ -11,6 +11,17 @@ use Illuminate\Database\Eloquent\Model;
  */
 class ModelDiscovery
 {
+    /**
+     * Overrides conhecidos do Eloquent que são puro boilerplate sem conteúdo de negócio — únicos
+     * métodos públicos que `extractSafeParts()` descarta (validado contra 5 models reais e grandes
+     * antes de fechar a lista: manter TODO método público é o que garante nunca perder regra de
+     * negócio real, só esses nomes específicos do framework são seguros de cortar sempre).
+     */
+    private const DENYLIST_FRAMEWORK = [
+        'setKeysForSaveQuery', 'setKeysForSelectQuery', 'getRouteKeyName',
+        'resolveRouteBinding', 'newModelQuery', 'newEloquentBuilder', 'newCollection',
+    ];
+
     public function __construct(
         private readonly string $modelsPath,
         private readonly string $modelNamespace,
@@ -45,7 +56,11 @@ class ModelDiscovery
      *
      * @return string[] caminhos absolutos de arquivo
      */
-    public function supportingFilesForModel(string $modelo): array
+    /**
+     * @param int $maxArquivos Teto de quantos arquivos coletar (regra: nº de arquivos de apoio) —
+     *        para de procurar assim que atinge o limite, não corta depois de já ter achado tudo.
+     */
+    public function supportingFilesForModel(string $modelo, int $maxArquivos = PHP_INT_MAX): array
     {
         $encontrados  = [];
         $usoNamespace = preg_quote($this->modelNamespace . '\\' . $modelo, '/');
@@ -55,6 +70,9 @@ class ModelDiscovery
                 continue;
             }
             foreach ($this->phpFilesRecursively($base) as $file) {
+                if (count($encontrados) >= $maxArquivos) {
+                    return $encontrados;
+                }
                 $conteudo = file_get_contents($file);
                 if ($conteudo === false) {
                     continue;
@@ -108,6 +126,87 @@ class ModelDiscovery
         }
 
         return empty($blocos) ? null : implode("\n\n", $blocos);
+    }
+
+    /**
+     * Extração SEGURA do arquivo do próprio model (regra D2) — mantém todo método PÚBLICO (é
+     * superfície de negócio) + `boot()`/`booted()` (registro de global scope, crítico pra
+     * scope_class) + `scopeXxx()`/accessor mesmo se não-público. Só remove uma denylist curta e
+     * fixa de overrides do Eloquent puramente boilerplate.
+     *
+     * Validado contra 5 models reais e grandes do domínio original antes de fechar este design: uma
+     * versão mais agressiva (só relação/scope/booted/accessor) reduzia mais, mas cortava método de
+     * negócio público real (ex: disponibilidade de recurso) só por não bater em nenhum papel
+     * conhecido — perda silenciosa de regra de negócio. Manter todo público é o que garante nunca
+     * perder isso; a redução fica menor, mas é uma redução de verdade (overrides do framework
+     * custam espaço sem informação nenhuma).
+     *
+     * @return array{semente: string[], corpos: array<string, string>}
+     */
+    public function extractSafeParts(string $conteudo): array
+    {
+        ['corpos' => $corpos, 'visibilidades' => $visibilidades] = $this->extractMethodBodies($conteudo);
+
+        $semente = [];
+        foreach ($corpos as $nome => $corpo) {
+            if (in_array($nome, self::DENYLIST_FRAMEWORK, true)) {
+                continue;
+            }
+            if ($nome === 'boot' || $nome === 'booted') {
+                $semente[] = $nome;
+                continue;
+            }
+            if (($visibilidades[$nome] ?? 'public') === 'public' && !str_starts_with($nome, '__')) {
+                $semente[] = $nome;
+                continue;
+            }
+            if (preg_match('/^scope[A-Z]/', $nome) || preg_match('/^(get|set)\w+Attribute$/', $nome)) {
+                $semente[] = $nome;
+            }
+        }
+
+        return ['semente' => $semente, 'corpos' => array_intersect_key($corpos, array_flip($semente))];
+    }
+
+    /**
+     * Reextrai o corpo de métodos JÁ IDENTIFICADOS por nome (ex: pela semente salva no
+     * `ModelIndex`) — usado quando o índice persistido já sabe quais métodos importam, sem precisar
+     * rodar `extractSafeParts()` (que reclassifica cada método do zero) de novo.
+     *
+     * @param string[] $nomes
+     * @return array<string, string>
+     */
+    public function extractNamedMethods(string $conteudo, array $nomes): array
+    {
+        ['corpos' => $corpos] = $this->extractMethodBodies($conteudo);
+        return array_intersect_key($corpos, array_flip($nomes));
+    }
+
+    /** @return array{corpos: array<string,string>, visibilidades: array<string,string>} */
+    private function extractMethodBodies(string $conteudo): array
+    {
+        $padrao = '/(public|protected|private)?\s*(static\s+)?function\s+(\w+)\s*\([^)]*\)\s*(?::\s*\??[\w\\\\|]+\s*)?\{/';
+        $offset = 0;
+        $corpos = [];
+        $visibilidades = [];
+
+        while (preg_match($padrao, $conteudo, $m, PREG_OFFSET_CAPTURE, $offset)) {
+            $visibilidade = $m[1][0] !== '' ? $m[1][0] : 'public';
+            $nome = $m[3][0];
+            $inicio = $m[0][1];
+            $posAbertura = $inicio + strlen($m[0][0]) - 1;
+            $posFechamento = BraceMatcher::fechamentoDe($conteudo, $posAbertura);
+
+            if ($posFechamento === null) {
+                break;
+            }
+
+            $corpos[$nome] = substr($conteudo, $inicio, $posFechamento - $inicio + 1);
+            $visibilidades[$nome] = $visibilidade;
+            $offset = $posFechamento + 1;
+        }
+
+        return ['corpos' => $corpos, 'visibilidades' => $visibilidades];
     }
 
     /** @return string[] */

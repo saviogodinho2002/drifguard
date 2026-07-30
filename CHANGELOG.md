@@ -3,6 +3,31 @@
 Todas as mudanças notáveis deste projeto são documentadas aqui. Formato baseado em
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [0.5.0] - 2026-07-30
+
+Motivado por relato de uso real: alguns models (segundo projeto externo) são grandes o bastante
+pra o arquivo inteiro do model virar ruído/custo desnecessário no contexto enviado ao LLM.
+Validado contra 5 models reais e grandes de uma aplicação em produção antes de fechar o design — uma
+versão mais agressiva de extração (só relação/scope/booted/accessor) chegava a reduzir 99%, mas
+cortava método de negócio público real num dos models testados; a versão que entrou é a que nunca
+perde nada, com redução real porém mais modesta (1.6%-35.5% nos 5 models testados).
+
+### Added
+- `ModelDiscovery::extractSafeParts()` — arquivo do próprio model, quando maior que
+  `max_snippet_chars`, mantém todo método PÚBLICO (superfície de negócio) + `boot()`/`booted()` +
+  `scopeXxx()`/accessor mesmo se não-público; remove só uma denylist curta de overrides do Eloquent
+  puramente boilerplate (`setKeysForSaveQuery` e afins). Nunca corta método de negócio público.
+- `Support\ModelIndex` — índice persistido por model (`storage_path/index/{Model}.json`,
+  compartilhado via git igual `context.json`) guardando os métodos já classificados como relevantes
+  e o hash do conteúdo — evita reclassificar tudo de novo quando o arquivo não mudou desde a última
+  rodada; auditável (dá pra abrir o JSON e ver exatamente o que foi considerado relevante).
+- `max_total_snippet_chars` (default 60000) — orçamento combinado somando TODOS os snippets de 1
+  model (arquivo do model + arquivos de apoio); se estourar, descarta arquivo de apoio (nunca o do
+  model) começando pelos de menor conteúdo extraído. Espelha o `MAX_TOTAL_CHARS` do sistema
+  original de onde o driftguard foi extraído.
+- `max_supporting_files` (default 5) — teto de quantos arquivos de apoio são coletados por model.
+  Espelha o `MAX_RELATED_FILES` do original.
+
 ## [0.4.0] - 2026-07-29
 
 ### Changed

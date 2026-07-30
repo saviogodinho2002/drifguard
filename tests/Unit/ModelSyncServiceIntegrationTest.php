@@ -31,6 +31,8 @@ class ModelSyncServiceIntegrationTest extends TestCase
 
     protected function tearDown(): void
     {
+        array_map('unlink', glob("{$this->tmpStorage}/index/*") ?: []);
+        @rmdir("{$this->tmpStorage}/index");
         array_map('unlink', glob("{$this->tmpStorage}/*") ?: []);
         @rmdir($this->tmpStorage);
         @unlink($this->tmpOutputConfig);
@@ -44,6 +46,8 @@ class ModelSyncServiceIntegrationTest extends TestCase
         ?string $allowedBasePath = null,
         int $maxSnippetChars = 6000,
         ?ScopeClassWriter $scopeClassWriter = null,
+        int $maxTotalSnippetChars = 60000,
+        int $maxSupportingFiles = 5,
     ): ModelSyncService {
         return new ModelSyncService(
             client: $client,
@@ -62,6 +66,8 @@ class ModelSyncServiceIntegrationTest extends TestCase
             storagePath: $this->tmpStorage,
             maxSnippetChars: $maxSnippetChars,
             allowedBasePath: $allowedBasePath,
+            maxTotalSnippetChars: $maxTotalSnippetChars,
+            maxSupportingFiles: $maxSupportingFiles,
         );
     }
 
@@ -263,5 +269,114 @@ class ModelSyncServiceIntegrationTest extends TestCase
 
         array_map('unlink', glob("{$scopeDir}/*.php") ?: []);
         @rmdir($scopeDir);
+    }
+
+    /**
+     * Regra D2: arquivo do model acima de maxSnippetChars roda extractSafeParts() e grava o
+     * ModelIndex — auditável (o índice guarda exatamente quais métodos foram considerados
+     * relevantes) e reaproveitável na próxima rodada.
+     */
+    public function test_large_model_file_triggers_extraction_and_writes_index(): void
+    {
+        $client = (new FakeAnalysisClient())->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y']);
+
+        // maxSnippetChars minúsculo força a extração até no fixture pequeno (Post.php)
+        $service = $this->makeService($client, maxSnippetChars: 5);
+
+        $service->runAnalysis(['Post'], fn() => null);
+
+        $indexPath = "{$this->tmpStorage}/index/Post.json";
+        $this->assertFileExists($indexPath);
+
+        $indice = json_decode(file_get_contents($indexPath), true);
+        $this->assertContains('author', $indice['metodos_semente']);
+        $this->assertArrayHasKey('hash_arquivo', $indice);
+    }
+
+    /** Regra D2: 2ª análise com o MESMO conteúdo de arquivo não deve regravar o índice (reaproveita). */
+    public function test_second_analysis_with_unchanged_model_file_reuses_index_without_rewriting(): void
+    {
+        $client = (new FakeAnalysisClient())
+            ->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y'])
+            ->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y']);
+
+        $service = $this->makeService($client, maxSnippetChars: 5);
+
+        $service->runAnalysis(['Post'], fn() => null);
+
+        $indexPath = "{$this->tmpStorage}/index/Post.json";
+        $this->assertFileExists($indexPath);
+
+        // "backdata" o mtime pra confirmar depois que NADA regravou o arquivo (regravar sempre
+        // atualiza o mtime pro momento atual, então continuar com o mtime antigo prova reuso)
+        touch($indexPath, time() - 1000);
+        clearstatcache(true, $indexPath);
+        $mtimeAntes = filemtime($indexPath);
+
+        $service->runAnalysis(['Post'], fn() => null);
+
+        clearstatcache(true, $indexPath);
+        $this->assertSame($mtimeAntes, filemtime($indexPath), 'índice não deveria ser regravado quando o conteúdo do arquivo não mudou');
+    }
+
+    /**
+     * Regra D3: orçamento total combinado nunca descarta o arquivo do PRÓPRIO model, mesmo sob
+     * pressão extrema — só arquivo de apoio é candidato a descarte.
+     */
+    public function test_combined_budget_never_discards_the_model_file_even_under_extreme_pressure(): void
+    {
+        $dir = sys_get_temp_dir() . '/driftguard_budget_test_' . uniqid();
+        mkdir($dir, 0755, true);
+        file_put_contents("{$dir}/PostController.php", "<?php\nclass PostController {\n    public function x() {\n        return Post::all();\n    }\n}");
+
+        $client = (new FakeAnalysisClient())->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y']);
+
+        $service = $this->makeService(
+            $client,
+            supportingPaths: [$dir],
+            maxTotalSnippetChars: 1, // orçamento absurdamente pequeno — só o model deveria sobreviver
+        );
+
+        $service->runAnalysis(['Post'], fn() => null);
+
+        $conteudoUsuario = $client->mensagensRecebidas[0][1]['content'];
+
+        $this->assertStringContainsString('class Post extends Model', $conteudoUsuario);
+        $this->assertStringNotContainsString('PostController', $conteudoUsuario);
+
+        array_map('unlink', glob("{$dir}/*.php") ?: []);
+        rmdir($dir);
+    }
+
+    /** Regra D4: limite de nº de arquivos de apoio é respeitado ponta a ponta. */
+    public function test_supporting_file_count_cap_is_respected_end_to_end(): void
+    {
+        $dir = sys_get_temp_dir() . '/driftguard_count_cap_test_' . uniqid();
+        mkdir($dir, 0755, true);
+        for ($i = 1; $i <= 3; $i++) {
+            file_put_contents("{$dir}/Controller{$i}.php", "<?php\nclass Controller{$i} {\n    public function x() {\n        return Post::all();\n    }\n}");
+        }
+
+        $client = (new FakeAnalysisClient())->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y']);
+
+        $service = $this->makeService($client, supportingPaths: [$dir], maxSupportingFiles: 1);
+
+        $service->runAnalysis(['Post'], fn() => null);
+
+        // o snippet extraído é só o corpo do método (sem a declaração "class ControllerN"), mas o
+        // path do arquivo (que inclui o nome distinto) entra como cabeçalho de cada snippet — conta
+        // quantos dos 3 nomes distintos aparecem, não o conteúdo (que é idêntico entre os 3 arquivos)
+        $conteudoUsuario = $client->mensagensRecebidas[0][1]['content'];
+        $qtdControllers  = 0;
+        foreach ([1, 2, 3] as $i) {
+            if (str_contains($conteudoUsuario, "Controller{$i}.php")) {
+                $qtdControllers++;
+            }
+        }
+
+        $this->assertSame(1, $qtdControllers, 'só 1 arquivo de apoio deveria ter entrado, respeitando maxSupportingFiles');
+
+        array_map('unlink', glob("{$dir}/*.php") ?: []);
+        rmdir($dir);
     }
 }

@@ -99,4 +99,113 @@ class ModelDiscoveryTest extends TestCase
         // o bloco extraído precisa fechar todas as chaves aninhadas, não parar na primeira '}'
         $this->assertSame(substr_count($resultado, '{'), substr_count($resultado, '}'));
     }
+
+    // ── extractSafeParts() — extração segura do arquivo do PRÓPRIO model ──────
+
+    private const MODELO_GRANDE = <<<'PHP'
+    <?php
+    class Contract
+    {
+        public function coordinator()
+        {
+            return $this->belongsTo(Coordinator::class);
+        }
+
+        public function scopeOwns($query, $user)
+        {
+            return $query->where('coordinator_id', $user->id);
+        }
+
+        protected static function booted()
+        {
+            static::addGlobalScope(new TenantScope());
+        }
+
+        public function getStatusLabelAttribute()
+        {
+            return ucfirst($this->status);
+        }
+
+        public function comodosDisponiveis()
+        {
+            return $this->hasMany(Comodo::class)->where('disponivel', true);
+        }
+
+        private function calcularAlgoInterno()
+        {
+            return 1 + 1;
+        }
+
+        public function setKeysForSaveQuery($query)
+        {
+            return $query;
+        }
+    }
+    PHP;
+
+    public function test_extract_safe_parts_keeps_all_public_business_methods(): void
+    {
+        $resultado = $this->discovery->extractSafeParts(self::MODELO_GRANDE);
+
+        $this->assertContains('coordinator', $resultado['semente']);
+        $this->assertContains('comodosDisponiveis', $resultado['semente']);
+        $this->assertStringContainsString('belongsTo', $resultado['corpos']['coordinator']);
+    }
+
+    public function test_extract_safe_parts_keeps_booted_scope_and_accessor_even_if_not_public(): void
+    {
+        $resultado = $this->discovery->extractSafeParts(self::MODELO_GRANDE);
+
+        $this->assertContains('booted', $resultado['semente']);
+        $this->assertContains('scopeOwns', $resultado['semente']);
+        $this->assertContains('getStatusLabelAttribute', $resultado['semente']);
+    }
+
+    public function test_extract_safe_parts_removes_only_known_eloquent_framework_overrides(): void
+    {
+        $resultado = $this->discovery->extractSafeParts(self::MODELO_GRANDE);
+
+        $this->assertNotContains('setKeysForSaveQuery', $resultado['semente']);
+    }
+
+    public function test_extract_safe_parts_drops_private_helper_matching_no_known_role(): void
+    {
+        $resultado = $this->discovery->extractSafeParts(self::MODELO_GRANDE);
+
+        $this->assertNotContains('calcularAlgoInterno', $resultado['semente']);
+    }
+
+    public function test_extract_named_methods_reextracts_only_the_given_names(): void
+    {
+        $corpos = $this->discovery->extractNamedMethods(self::MODELO_GRANDE, ['coordinator', 'scopeOwns']);
+
+        $this->assertArrayHasKey('coordinator', $corpos);
+        $this->assertArrayHasKey('scopeOwns', $corpos);
+        $this->assertArrayNotHasKey('booted', $corpos);
+        $this->assertArrayNotHasKey('comodosDisponiveis', $corpos);
+    }
+
+    // ── supportingFilesForModel() — limite de nº de arquivos (regra D4) ────────
+
+    public function test_supporting_files_for_model_stops_at_max_count(): void
+    {
+        $dir = "{$this->tmpDir}/controllers";
+        mkdir($dir, 0755, true);
+        for ($i = 1; $i <= 4; $i++) {
+            file_put_contents("{$dir}/Controller{$i}.php", "<?php\nclass Controller{$i} { public function x() { return Post::all(); } }");
+        }
+
+        $discovery = new ModelDiscovery(
+            modelsPath: $this->tmpDir,
+            modelNamespace: 'App\\Models',
+            supportingPaths: [$dir],
+        );
+
+        $encontrados = $discovery->supportingFilesForModel('Post', maxArquivos: 2);
+
+        $this->assertCount(2, $encontrados);
+
+        array_map('unlink', glob("{$dir}/*.php") ?: []);
+        rmdir($dir);
+    }
 }

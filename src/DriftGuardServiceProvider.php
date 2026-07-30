@@ -88,6 +88,8 @@ class DriftGuardServiceProvider extends ServiceProvider
                 storagePath: $config['storage_path'],
                 maxSnippetChars: $config['max_snippet_chars'] ?? 6000,
                 allowedBasePath: $config['allowed_base_path'] ?? base_path(),
+                maxTotalSnippetChars: $config['max_total_snippet_chars'] ?? 60000,
+                maxSupportingFiles: $config['max_supporting_files'] ?? 5,
             );
         });
     }
