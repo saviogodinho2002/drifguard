@@ -39,6 +39,13 @@ php artisan driftguard:apply --dry-run  # mostra o diff sem aplicar
 php artisan driftguard:apply            # aplica (pede confirmação)
 ```
 
+`driftguard:doctor` também avisa (nível `WARN`, nunca falha o exit code) quando uma entrada de
+`config/models.php` não corresponde a nenhum model encontrado em `models_path` — sinal de que o
+model foi renomeado, movido ou apagado desde a última análise. O pacote **nunca remove essa entrada
+sozinho** (o catálogo é curado à mão, igual qualquer outro campo — ver "Segurança" abaixo); reveja
+manualmente e decida: se foi rename/move, ajuste `models_path`/o nome da classe e rode `analyze`
+de novo; se o model saiu de vez, apague a entrada à mão em `config/models.php`.
+
 Se você já analisou tudo por fora (ou só quer marcar "a partir de agora, reanalise o que mudar")
 sem pagar o custo de rodar `--force` contra todos os models de novo:
 
