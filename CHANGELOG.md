@@ -3,6 +3,27 @@
 Todas as mudanças notáveis deste projeto são documentadas aqui. Formato baseado em
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [0.7.5] - 2026-07-31
+
+Motivado por uma auditoria dos 3 shapes reais de saída JSON dos harnesses de CLI (Claude Code CLI,
+Gemini CLI, opencode), lendo o código-fonte de cada um em vez de assumir a partir da documentação em
+prosa. `CliHarnessAnalysisClient` só sabia ler campo plano/único; os 3 shapes reais divergem disso de
+formas diferentes: Claude aninha tokens em `usage.*`; Gemini reporta tokens por model (chave
+dinâmica) e não tem custo em dólar em lugar nenhum do schema; opencode separa o evento do texto final
+(`text`) do evento de custo/tokens (`step_finish`), podendo ter mais de 1 `step_finish` por resposta.
+
+### Added
+- `cost_field`/`prompt_tokens_field`/`completion_tokens_field` (e `result_field`) agora aceitam
+  dot-path (ex: `'usage.input_tokens'`), com `*` como segmento curinga pra somar através de uma
+  chave dinâmica (`'stats.models.*.tokens.prompt'`).
+- Preset `claude`: `usage.input_tokens`/`usage.output_tokens` extraídos (antes só custo).
+- Preset `gemini`: `response_format` corrigido de `plain_text` pra `single_json` (`-o json` real,
+  `result_field => 'response'`); tokens extraídos por model e somados; `cost_field` continua `null`
+  (confirmado definitivo, não "ainda não exposto").
+- Preset `opencode`: `result_field`/`cost_field` corrigidos pra `part.text`/`part.cost` (aninhados,
+  não planos); tokens (`part.tokens.input`/`part.tokens.output`) somados através de todos os eventos
+  `step_finish` de uma resposta, não só o último.
+
 ## [0.7.4] - 2026-07-31
 
 Motivado por uma revisão de `ModelSyncService::writeProposal()`: `proposal.php` era sobrescrito

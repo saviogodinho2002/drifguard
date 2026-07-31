@@ -56,8 +56,10 @@ return [
     |    (cross-referências que o harness descobre sozinho via Grep, não limitadas ao orçamento de
     |    max_snippet_chars). O CLI precisa estar AUTENTICADO no ambiente que roda driftguard:analyze
     |    (login prévio ou API key do provedor da CLI — pode não servir bem pra CI/headless sem
-    |    sessão interativa). Custo vem do relatório da própria CLI, não desta config; Gemini CLI
-    |    ainda não expõe custo em modo headless na versão atual.
+    |    sessão interativa). Custo/tokens vêm do relatório da própria CLI (usage['cost_usd'/
+    |    'prompt_tokens'/'completion_tokens'], best-effort — null quando a CLI não expõe aquele
+    |    campo especificamente; Gemini CLI expõe tokens mas não custo em dólar, confirmado lendo o
+    |    schema de tipos do próprio código-fonte da CLI, não só a documentação em prosa).
     | 3. Bind da sua própria implementação de Contracts\AnalysisClient no seu ServiceProvider —
     |    qualquer outro provedor (Anthropic direto, OpenAI, outro CLI com saída totalmente diferente).
     */
@@ -83,34 +85,52 @@ return [
         ],
         'cli_harness_presets' => [
             'claude' => [ // validado ao vivo (chamada real contra um model de produção)
-                'command'         => 'claude',
-                'extra_args'      => ['--output-format', 'json'],
-                'response_format' => 'single_json',
-                'result_field'    => 'result',
-                'cost_field'      => 'total_cost_usd',
-                'dir_flag'        => '--add-dir',
-                'tools_flag'      => '--allowedTools',
-                'harness_tools'   => ['Read', 'Grep', 'Glob'],
+                'command'                 => 'claude',
+                'extra_args'              => ['--output-format', 'json'],
+                'response_format'         => 'single_json',
+                'result_field'            => 'result',
+                'cost_field'              => 'total_cost_usd',
+                'prompt_tokens_field'     => 'usage.input_tokens',
+                'completion_tokens_field' => 'usage.output_tokens',
+                'dir_flag'                => '--add-dir',
+                'tools_flag'              => '--allowedTools',
+                'harness_tools'           => ['Read', 'Grep', 'Glob'],
             ],
-            'gemini' => [ // Gemini CLI ainda não expõe stats/custo em modo headless na versão atual
-                'command'         => 'gemini',
-                'extra_args'      => [],
-                'response_format' => 'plain_text',
-                'result_field'    => null,
-                'cost_field'      => null,
-                'dir_flag'        => null, // sem flag de restrição de diretório equivalente ao --add-dir
-                'tools_flag'      => null,
-                'harness_tools'   => [],
+            // Schema confirmado lendo o código-fonte da Gemini CLI (packages/core/src/output/types.ts
+            // e telemetry/uiTelemetry.ts) + 1 chamada real autenticada batendo com o schema — mas não
+            // reproduzível de forma confiável neste ambiente (credencial não persiste entre chamadas).
+            // `-o json` devolve {session_id, response, stats, error, warnings}; tokens vêm por MODEL
+            // (stats.models.<nome>.tokens.{prompt,candidates}, chave dinâmica — por isso o `*`
+            // curinga, somado através de todos os models envolvidos na resposta). Sem campo de custo
+            // em dólar em lugar nenhum do schema — não existe pra inventar.
+            'gemini' => [
+                'command'                 => 'gemini',
+                'extra_args'              => ['--output-format', 'json'],
+                'response_format'         => 'single_json',
+                'result_field'            => 'response',
+                'cost_field'              => null, // confirmado: não existe no schema da CLI
+                'prompt_tokens_field'     => 'stats.models.*.tokens.prompt',
+                'completion_tokens_field' => 'stats.models.*.tokens.candidates',
+                'dir_flag'                => null, // sem flag de restrição de diretório equivalente ao --add-dir
+                'tools_flag'              => null,
+                'harness_tools'           => [],
             ],
-            'opencode' => [ // expõe custo via evento step_finish num stream de JSON, não um objeto único
-                'command'         => 'opencode',
-                'extra_args'      => ['run', '--format', 'json'],
-                'response_format' => 'json_stream',
-                'result_field'    => 'text', // ajuste conforme o nome exato do campo na sua versão, se divergir
-                'cost_field'      => 'cost', // idem
-                'dir_flag'        => null, // controle de diretório é via config do agente, não flag de runtime
-                'tools_flag'      => null, // controle de permissão é via config do agente, não flag de runtime
-                'harness_tools'   => [],
+            // Schema confirmado lendo o código-fonte do opencode (packages/opencode/src/cli/cmd/run.ts
+            // e packages/schema/src/v1/session.ts, StepFinishPart) — não instalado/rodado ao vivo. O
+            // texto final vem de um evento tipo "text" (part.text), DIFERENTE do(s) evento(s) tipo
+            // "step_finish" que carregam custo/tokens (part.cost, part.tokens.{input,output}) — pode
+            // haver mais de 1 "step_finish" numa resposta (tool-call loop interno), somados entre si.
+            'opencode' => [
+                'command'                 => 'opencode',
+                'extra_args'              => ['run', '--format', 'json'],
+                'response_format'         => 'json_stream',
+                'result_field'            => 'part.text',
+                'cost_field'              => 'part.cost',
+                'prompt_tokens_field'     => 'part.tokens.input',
+                'completion_tokens_field' => 'part.tokens.output',
+                'dir_flag'                => null, // controle de diretório é via config do agente, não flag de runtime
+                'tools_flag'              => null, // controle de permissão é via config do agente, não flag de runtime
+                'harness_tools'           => [],
             ],
         ],
     ],

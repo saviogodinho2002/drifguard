@@ -143,6 +143,8 @@ class DriftGuardServiceProvider extends ServiceProvider
             responseFormat: $valor('response_format', 'single_json'),
             resultField: $valor('result_field', 'result'),
             costField: $valor('cost_field', 'total_cost_usd'),
+            promptTokensField: $valor('prompt_tokens_field', null),
+            completionTokensField: $valor('completion_tokens_field', null),
             timeoutSeconds: $valor('timeout', $config['timeout'] ?? 300),
             allowedBasePath: $allowedBasePath,
             harnessTools: $valor('harness_tools', ['Read', 'Grep', 'Glob']),

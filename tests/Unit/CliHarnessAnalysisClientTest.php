@@ -74,6 +74,68 @@ class CliHarnessAnalysisClientTest extends TestCase
         $this->assertSame(0.0123, $resultado['usage']['cost_usd'], 'custo do total_cost_usd deveria ser extraído pro retorno, não só logado');
     }
 
+    /**
+     * Shape real do Claude Code CLI (`--output-format json`), confirmado com chamada real ao vivo:
+     * tokens vêm aninhados em `usage.input_tokens`/`usage.output_tokens` (não um campo plano, ao
+     * contrário de `total_cost_usd`).
+     */
+    public function test_claude_shaped_nested_usage_tokens_are_extracted(): void
+    {
+        $script = $this->fakeCommand(<<<'PHP'
+        $resposta = ['tool' => 'propose_update', 'arguments' => []];
+        echo json_encode([
+            'result' => json_encode($resposta),
+            'total_cost_usd' => 0.085,
+            'usage' => ['input_tokens' => 3, 'output_tokens' => 4, 'cache_read_input_tokens' => 18372],
+        ]);
+        PHP);
+
+        $client = new CliHarnessAnalysisClient(
+            command: $script,
+            extraArgs: [],
+            promptTokensField: 'usage.input_tokens',
+            completionTokensField: 'usage.output_tokens',
+        );
+        $resultado = $client->chat([], $this->toolsBasicos());
+
+        $this->assertSame(3, $resultado['usage']['prompt_tokens']);
+        $this->assertSame(4, $resultado['usage']['completion_tokens']);
+    }
+
+    /**
+     * Shape real da Gemini CLI (`-o json`), confirmado lendo `SessionMetrics`/`ModelMetrics` no
+     * código-fonte: tokens vêm por MODEL (`stats.models.<nome>.tokens.{prompt,candidates}`), chave
+     * dinâmica — o segmento `*` soma através de todos os models envolvidos na resposta.
+     */
+    public function test_gemini_shaped_per_model_tokens_are_summed_via_wildcard(): void
+    {
+        $script = $this->fakeCommand(<<<'PHP'
+        $resposta = ['tool' => 'propose_update', 'arguments' => []];
+        echo json_encode([
+            'response' => json_encode($resposta),
+            'stats' => ['models' => [
+                'gemini-3.1-flash-lite' => ['tokens' => ['prompt' => 2565, 'candidates' => 27]],
+                'gemini-3.5-flash'      => ['tokens' => ['prompt' => 9035, 'candidates' => 1]],
+            ]],
+        ]);
+        PHP);
+
+        $client = new CliHarnessAnalysisClient(
+            command: $script,
+            extraArgs: [],
+            resultField: 'response',
+            costField: null,
+            promptTokensField: 'stats.models.*.tokens.prompt',
+            completionTokensField: 'stats.models.*.tokens.candidates',
+        );
+        $resultado = $client->chat([], $this->toolsBasicos());
+
+        $this->assertCount(1, $resultado['tool_calls']);
+        $this->assertNull($resultado['usage']['cost_usd'], 'Gemini CLI não expõe custo em dólar — confirmado no schema, nunca inventado');
+        $this->assertSame(11600, $resultado['usage']['prompt_tokens'], '2565 + 9035');
+        $this->assertSame(28, $resultado['usage']['completion_tokens'], '27 + 1');
+    }
+
     public function test_response_wrapped_in_markdown_fence_is_still_parsed(): void
     {
         $script = $this->fakeCommand(<<<'PHP'
@@ -156,26 +218,63 @@ class CliHarnessAnalysisClientTest extends TestCase
         $this->assertSame(['content' => null, 'tool_calls' => [], 'usage' => $this->usageVazio()], $resultado);
     }
 
-    public function test_json_stream_format_finds_step_finish_event(): void
+    /**
+     * Formato real do opencode (`run --format json`), confirmado lendo o código-fonte
+     * (`packages/opencode/src/cli/cmd/run.ts`, `StepFinishPart` em `session.ts`): o texto final vem
+     * de um evento tipo "text" (`part.text`), DIFERENTE do evento tipo "step_finish" que carrega
+     * custo/tokens (`part.cost`, `part.tokens.{input,output}`) — não é a mesma linha do stream.
+     */
+    public function test_json_stream_format_finds_text_event_separate_from_step_finish_event(): void
     {
         $script = $this->fakeCommand(<<<'PHP'
         $resposta = json_encode(['tool' => 'propose_update', 'arguments' => ['descricao' => 'y']]);
         echo json_encode(['type' => 'init']) . "\n";
-        echo json_encode(['type' => 'message', 'text' => 'explorando...']) . "\n";
-        echo json_encode(['type' => 'step_finish', 'text' => $resposta, 'cost' => 0.5]) . "\n";
+        echo json_encode(['type' => 'step_finish', 'part' => ['cost' => 0.5, 'tokens' => ['input' => 100, 'output' => 20]]]) . "\n";
+        echo json_encode(['type' => 'text', 'part' => ['text' => $resposta]]) . "\n";
         PHP);
 
         $client = new CliHarnessAnalysisClient(
             command: $script,
             extraArgs: [],
             responseFormat: 'json_stream',
-            resultField: 'text',
-            costField: 'cost',
+            resultField: 'part.text',
+            costField: 'part.cost',
+            promptTokensField: 'part.tokens.input',
+            completionTokensField: 'part.tokens.output',
         );
         $resultado = $client->chat([], $this->toolsBasicos());
 
         $this->assertCount(1, $resultado['tool_calls']);
         $this->assertSame('propose_update', $resultado['tool_calls'][0]['function']['name']);
+        $this->assertSame(0.5, $resultado['usage']['cost_usd']);
+        $this->assertSame(100, $resultado['usage']['prompt_tokens']);
+        $this->assertSame(20, $resultado['usage']['completion_tokens']);
+    }
+
+    /** Pode haver mais de 1 "step_finish" numa resposta só (loop de tool-call interno do harness) — soma, não pega só o último. */
+    public function test_json_stream_format_sums_cost_and_tokens_across_multiple_step_finish_events(): void
+    {
+        $script = $this->fakeCommand(<<<'PHP'
+        $resposta = json_encode(['tool' => 'propose_update', 'arguments' => []]);
+        echo json_encode(['type' => 'step_finish', 'part' => ['cost' => 0.3, 'tokens' => ['input' => 50, 'output' => 10]]]) . "\n";
+        echo json_encode(['type' => 'step_finish', 'part' => ['cost' => 0.2, 'tokens' => ['input' => 30, 'output' => 15]]]) . "\n";
+        echo json_encode(['type' => 'text', 'part' => ['text' => $resposta]]) . "\n";
+        PHP);
+
+        $client = new CliHarnessAnalysisClient(
+            command: $script,
+            extraArgs: [],
+            responseFormat: 'json_stream',
+            resultField: 'part.text',
+            costField: 'part.cost',
+            promptTokensField: 'part.tokens.input',
+            completionTokensField: 'part.tokens.output',
+        );
+        $resultado = $client->chat([], $this->toolsBasicos());
+
+        $this->assertEqualsWithDelta(0.5, $resultado['usage']['cost_usd'], 0.0001);
+        $this->assertSame(80, $resultado['usage']['prompt_tokens']);
+        $this->assertSame(25, $resultado['usage']['completion_tokens']);
     }
 
     public function test_plain_text_format_parses_stdout_directly(): void

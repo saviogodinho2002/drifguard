@@ -26,8 +26,11 @@ use Saviogodinho2002\DriftGuard\Support\ReadOnlyLock;
  *    allowlist passada pra CLI, mesmo que configurado explicitamente pelo host.
  *
  * O preset `claude` (Claude Code CLI) é o único validado com uma chamada real de ponta a ponta
- * contra um model de produção. Presets `gemini`/`opencode` seguem a documentação oficial de cada
- * CLI — ajuste `cli_harness` se a versão instalada usar uma flag diferente.
+ * contra um model de produção. Os shapes de `gemini`/`opencode` foram confirmados lendo o
+ * código-fonte de cada CLI (tipos/schema reais, não a documentação em prosa) — `gemini` também tem
+ * 1 amostra real (chamada autenticada) batendo com o schema encontrado no fonte, mas não
+ * reproduzível neste ambiente (sem credencial persistente); `opencode` não foi instalado/rodado ao
+ * vivo. Ajuste `cli_harness` se a versão instalada usar um shape diferente.
  */
 class CliHarnessAnalysisClient implements AnalysisClient
 {
@@ -38,12 +41,27 @@ class CliHarnessAnalysisClient implements AnalysisClient
         private readonly string $command = 'claude',
         /** @var string[] */
         private readonly array $extraArgs = ['--output-format', 'json'],
-        /** 'single_json' (Claude Code CLI) | 'json_stream' (opencode) | 'plain_text' (fallback / Gemini CLI hoje, ver gemini-cli#9009). */
+        /** 'single_json' (Claude Code CLI, Gemini CLI) | 'json_stream' (opencode) | 'plain_text' (fallback). */
         private readonly string $responseFormat = 'single_json',
-        /** Campo com o texto final — em single_json é uma chave do objeto; em json_stream, uma chave do evento de finalização. Null em plain_text. */
+        /**
+         * Caminho (dot-path, ex: 'usage.input_tokens') até o texto final. Em single_json, resolvido
+         * contra o objeto decodificado inteiro. Em json_stream, resolvido contra o evento tipo
+         * "text" (não o de finalização de passo — são eventos DIFERENTES no stream real do
+         * opencode). Null em plain_text (usa o stdout inteiro).
+         */
         private readonly ?string $resultField = 'result',
-        /** Campo de custo, mesma lógica de resultField. Null = sem rastreio de custo disponível (ex: Gemini CLI hoje). */
+        /**
+         * Caminho (dot-path) até o custo em USD. Em json_stream, resolvido contra CADA evento de
+         * finalização de passo ("step_finish"/"step-finish") e SOMADO entre eles (pode haver mais
+         * de 1 passo de LLM numa só resposta). Suporta `*` como segmento curinga pra somar através
+         * de um dicionário de chave dinâmica (ex: 'stats.models.*.tokens.prompt', quando a CLI
+         * reporta por model, não um total único). Null = sem rastreio de custo disponível.
+         */
         private readonly ?string $costField = 'total_cost_usd',
+        /** Caminho (dot-path, mesmo suporte a `*`) até tokens de entrada/prompt. Null = indisponível. */
+        private readonly ?string $promptTokensField = null,
+        /** Caminho (dot-path, mesmo suporte a `*`) até tokens de saída/completion. Null = indisponível. */
+        private readonly ?string $completionTokensField = null,
         private readonly int $timeoutSeconds = 300,
         /** Diretório que o harness pode explorar sozinho — mesmo princípio de allowed_base_path do request_file. */
         private readonly ?string $allowedBasePath = null,
@@ -103,8 +121,14 @@ class CliHarnessAnalysisClient implements AnalysisClient
             return ['content' => null, 'tool_calls' => [], 'usage' => $this->usageVazio()];
         }
 
-        ['texto' => $texto, 'custo' => $custo] = $this->extrairTextoECusto($resultado->output());
-        $usage = ['cost_usd' => $custo, 'prompt_tokens' => null, 'completion_tokens' => null];
+        $extraido = $this->extrairTextoECusto($resultado->output());
+        $texto    = $extraido['texto'];
+        $custo    = $extraido['custo'];
+        $usage    = [
+            'cost_usd'          => $custo,
+            'prompt_tokens'     => $extraido['prompt_tokens'],
+            'completion_tokens' => $extraido['completion_tokens'],
+        ];
 
         if ($custo !== null) {
             Log::info('[driftguard] CliHarnessAnalysisClient: custo da chamada', [
@@ -172,50 +196,136 @@ class CliHarnessAnalysisClient implements AnalysisClient
         return implode("\n", $linhas);
     }
 
-    /** @return array{texto: ?string, custo: ?float} */
+    /** @return array{texto: ?string, custo: ?float, prompt_tokens: ?int, completion_tokens: ?int} */
     private function extrairTextoECusto(string $saida): array
     {
         return match ($this->responseFormat) {
             'single_json' => $this->extrairDeSingleJson($saida),
             'json_stream' => $this->extrairDeJsonStream($saida),
-            default       => ['texto' => trim($saida) === '' ? null : $saida, 'custo' => null],
+            default       => ['texto' => trim($saida) === '' ? null : $saida, 'custo' => null, 'prompt_tokens' => null, 'completion_tokens' => null],
         };
     }
 
-    /** @return array{texto: ?string, custo: ?float} */
+    /** @return array{texto: ?string, custo: ?float, prompt_tokens: ?int, completion_tokens: ?int} */
     private function extrairDeSingleJson(string $saida): array
     {
         $dados = json_decode($saida, true);
         if (!is_array($dados)) {
-            return ['texto' => null, 'custo' => null];
+            return ['texto' => null, 'custo' => null, 'prompt_tokens' => null, 'completion_tokens' => null];
         }
 
         return [
-            'texto' => $this->resultField !== null ? ($dados[$this->resultField] ?? null) : null,
-            'custo' => $this->costField !== null ? ($dados[$this->costField] ?? null) : null,
+            'texto'             => $this->valorEmCaminho($dados, $this->resultField),
+            'custo'             => $this->somarCaminho($dados, $this->costField),
+            'prompt_tokens'     => $this->somarCaminho($dados, $this->promptTokensField),
+            'completion_tokens' => $this->somarCaminho($dados, $this->completionTokensField),
         ];
     }
 
-    /** @return array{texto: ?string, custo: ?float} */
+    /**
+     * Formato real do opencode (`run --format json`, confirmado em `StepFinishPart`/`emit()` no
+     * código-fonte): o texto final vem de um evento tipo "text" (`part.text`), DIFERENTE do(s)
+     * evento(s) tipo "step_finish"/"step-finish" que carregam custo/tokens (`part.cost`,
+     * `part.tokens.{input,output}`) — podem existir VÁRIOS "step_finish" numa única resposta
+     * (loop de tool-call interno do harness antes da resposta final), então custo/tokens são
+     * somados por TODOS eles, não só o último.
+     *
+     * @return array{texto: ?string, custo: ?float, prompt_tokens: ?int, completion_tokens: ?int}
+     */
     private function extrairDeJsonStream(string $saida): array
     {
         $linhas = array_filter(explode("\n", $saida), fn($l) => trim($l) !== '');
 
-        foreach (array_reverse($linhas) as $linha) {
+        $texto             = null;
+        $custo             = null;
+        $promptTokens      = null;
+        $completionTokens  = null;
+
+        foreach ($linhas as $linha) {
             $evento = json_decode($linha, true);
             if (!is_array($evento)) {
                 continue;
             }
             $tipo = $evento['type'] ?? null;
+
+            if ($tipo === 'text') {
+                $texto = $this->valorEmCaminho($evento, $this->resultField) ?? $texto;
+                continue;
+            }
+
             if (in_array($tipo, ['step_finish', 'step-finish'], true)) {
-                return [
-                    'texto' => $this->resultField !== null ? ($evento[$this->resultField] ?? null) : null,
-                    'custo' => $this->costField !== null ? ($evento[$this->costField] ?? null) : null,
-                ];
+                $custo            = $this->somarValores($custo, $this->somarCaminho($evento, $this->costField));
+                $promptTokens     = $this->somarValores($promptTokens, $this->somarCaminho($evento, $this->promptTokensField));
+                $completionTokens = $this->somarValores($completionTokens, $this->somarCaminho($evento, $this->completionTokensField));
             }
         }
 
-        return ['texto' => null, 'custo' => null];
+        return ['texto' => $texto, 'custo' => $custo, 'prompt_tokens' => $promptTokens, 'completion_tokens' => $completionTokens];
+    }
+
+    /** Lookup simples por dot-path (ex: 'usage.input_tokens') — sem suporte a `*`, pro texto (não-numérico). */
+    private function valorEmCaminho(array $dados, ?string $caminho): mixed
+    {
+        if ($caminho === null) {
+            return null;
+        }
+
+        $no = $dados;
+        foreach (explode('.', $caminho) as $segmento) {
+            if (!is_array($no) || !array_key_exists($segmento, $no)) {
+                return null;
+            }
+            $no = $no[$segmento];
+        }
+        return $no;
+    }
+
+    /**
+     * Dot-path com suporte a `*` como segmento curinga: soma o valor numérico encontrado em CADA
+     * item do array naquele nível (ex: 'stats.models.*.tokens.prompt', quando a CLI reporta tokens
+     * por model — chave dinâmica, não um total único já pronto). Sem `*`, é só um lookup normal.
+     */
+    private function somarCaminho(array $dados, ?string $caminho): int|float|null
+    {
+        if ($caminho === null) {
+            return null;
+        }
+        return $this->somarCaminhoRecursivo($dados, explode('.', $caminho));
+    }
+
+    /** @param string[] $segmentos */
+    private function somarCaminhoRecursivo(mixed $no, array $segmentos): int|float|null
+    {
+        if (empty($segmentos)) {
+            return is_numeric($no) ? $no + 0 : null;
+        }
+        if (!is_array($no)) {
+            return null;
+        }
+
+        $segmento = array_shift($segmentos);
+
+        if ($segmento === '*') {
+            $soma = null;
+            foreach ($no as $valor) {
+                $parcial = $this->somarCaminhoRecursivo($valor, $segmentos);
+                if ($parcial !== null) {
+                    $soma = ($soma ?? 0) + $parcial;
+                }
+            }
+            return $soma;
+        }
+
+        return array_key_exists($segmento, $no) ? $this->somarCaminhoRecursivo($no[$segmento], $segmentos) : null;
+    }
+
+    /** Soma null-safe: parcela null não participa (não vira 0); 2 null's ficam null. */
+    private function somarValores(int|float|null $a, int|float|null $b): int|float|null
+    {
+        if ($a === null && $b === null) {
+            return null;
+        }
+        return ($a ?? 0) + ($b ?? 0);
     }
 
     /**

@@ -207,8 +207,11 @@ pra chave que você sobrescreve quanto pras que os próprios presets `gemini`/`o
 flag específica de outra CLI (como `--add-dir`/`--allowedTools`, do Claude Code CLI) só porque o
 preset não definiu uma equivalente.
 
-**Custo por chamada aparece no `analyze --json`** (chave `usage`, ver seção `--json` acima) sempre
-que o formato escolhido expõe um `cost_field` — e continua sendo logado via
+**Custo/tokens por chamada aparecem no `analyze --json`** (chave `usage`, ver seção `--json` acima),
+extraídos de cada preset via `cost_field`/`prompt_tokens_field`/`completion_tokens_field` — caminhos
+no estilo dot-path (`'usage.input_tokens'`), com suporte a `*` como segmento curinga pra somar
+através de uma chave dinâmica (a Gemini CLI reporta tokens por model, não um total único pronto:
+`'stats.models.*.tokens.prompt'`). Custo continua sendo logado via
 `Log::info('[driftguard] CliHarnessAnalysisClient: custo da chamada', [...])` a cada chamada, útil
 pra acompanhar em tempo real (`storage/logs/laravel.log` por padrão) sem esperar a rodada terminar.
 
@@ -224,10 +227,17 @@ pra acompanhar em tempo real (`storage/logs/laravel.log` por padrão) sem espera
 - **O CLI precisa estar AUTENTICADO no ambiente que roda `driftguard:analyze`** (login prévio ou API
   key do provedor da CLI) — diferente de só ter uma env var configurada; pode não servir bem pra
   CI/headless sem uma sessão interativa já estabelecida.
-- **Rastreio de custo depende do CLI.** Claude Code CLI expõe `total_cost_usd` direto no
-  `--output-format json`. Gemini CLI ainda não expõe custo em modo headless na versão atual (preset
-  `gemini` já reflete isso, `cost_field => null`). opencode expõe custo num evento `step_finish`
-  dentro de um stream de JSON, não num objeto único.
+- **Rastreio de custo/tokens depende do CLI, e o shape difere bastante entre elas.** Claude Code CLI
+  expõe `total_cost_usd` (plano) e `usage.input_tokens`/`usage.output_tokens` (aninhado) no
+  `--output-format json` — o único preset validado com uma chamada real de ponta a ponta. Gemini CLI
+  expõe tokens por model (`stats.models.<nome>.tokens.{prompt,candidates}`, somados entre models via
+  `*`) mas **não tem custo em dólar em lugar nenhum do schema** (`cost_field => null` é definitivo,
+  não "ainda não" — confirmado lendo o código-fonte da CLI). opencode expõe custo/tokens num evento
+  `step_finish` (`part.cost`, `part.tokens.{input,output}`) DIFERENTE do evento que carrega o texto
+  final (`text`, `part.text`) — pode haver mais de 1 `step_finish` numa resposta só (loop de
+  tool-call interno do harness), somados entre si. Os shapes de `gemini`/`opencode` vêm do
+  código-fonte de cada CLI, não de uma chamada autenticada de ponta a ponta neste pacote — ajuste
+  os `*_field` em `cli_harness` se a versão instalada divergir.
 
 ### Segurança durante a exploração: 3 camadas independentes
 
