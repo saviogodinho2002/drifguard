@@ -117,7 +117,10 @@ Tudo em `config/driftguard.php`, publicado no seu próprio projeto — edite liv
 
 - **`context_docs`** — aponte arquivos `.md` com regra de negócio que não dá pra inferir só lendo o
   código (motivo histórico, decisão de produto). Entra como contexto extra pra IA, nunca substitui
-  o que reflection já determina. Veja o que está resolvido com `driftguard:context:list`.
+  o que reflection já determina. Se o conteúdo do doc parecer contradizer o que a IA observa no
+  código, ela é instruída a usar `ask_question` em vez de escolher um lado sozinha (mesma regra vale
+  pra resposta humana anterior via `driftguard:answer`). Veja o que está resolvido com
+  `driftguard:context:list`.
 - **`extra_prompt_rules`** — meta-instrução de formato/convenção específica do seu app (não é
   conhecimento de negócio por model — isso é `context_docs`).
 - **`max_snippet_chars`** — teto de tamanho pra um arquivo (apoio OU o próprio model) acima do qual

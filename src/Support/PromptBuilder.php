@@ -31,9 +31,14 @@ class PromptBuilder
         3. Nunca invente uma regra de negócio que não consegue confirmar lendo o código ou os
            documentos de contexto fornecidos. Se precisar de mais informação, use `request_file` (pra
            puxar outro arquivo) ou `ask_question` (pra perguntar a um humano) — nunca adivinhe.
-        4. Se um documento de contexto de negócio foi fornecido, ele é HUMANO e AUTORITATIVO sobre
-           intenção/motivo de negócio — mas mesmo assim nunca sobrescreve fato estrutural vindo de
-           reflection (regra 1 sempre vence).
+        4. Se um documento de contexto de negócio OU uma resposta humana anterior (via ask_question)
+           foi fornecido, é HUMANO e AUTORITATIVO sobre intenção/motivo de negócio — mas mesmo assim
+           nunca sobrescreve fato estrutural vindo de reflection (regra 1 sempre vence).
+        5. Se essa informação humana parecer CONTRADIZER o que você observa lendo o código (não fato
+           estrutural — isso a regra 1 já resolve — mas comportamento/mecânica aparente), NÃO
+           resolva a divergência sozinho nem escolha um lado em silêncio: use ask_question citando
+           as duas versões (o que a fonte humana diz vs. o que o código parece indicar) e deixe a
+           decisão pra quem revisar.
         TXT;
 
         $regrasDeCampo = $this->regrasPorCampo();

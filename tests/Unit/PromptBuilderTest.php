@@ -47,6 +47,22 @@ class PromptBuilderTest extends TestCase
         }
     }
 
+    /**
+     * Achado numa revisão do prompt: a regra de prioridade (context_docs/resposta anterior nunca
+     * sobrescreve fato estrutural) não cobria o caso de CONFLITO — o doc/resposta parecer
+     * contradizer o que o código mostra. Regra 5 fecha isso: a IA deve usar ask_question em vez de
+     * resolver a divergência sozinha, e a regra cobre as 2 fontes (context_docs E resposta anterior
+     * via driftguard:answer, que buildMessages() trata com a mesma autoridade).
+     */
+    public function test_system_prompt_instructs_ask_question_on_divergence_between_human_context_and_code(): void
+    {
+        $prompt = (new PromptBuilder([]))->buildSystemPrompt();
+
+        $this->assertStringContainsString('CONTRADIZER', $prompt);
+        $this->assertStringContainsString('resposta humana anterior', $prompt);
+        $this->assertMatchesRegularExpression('/CONTRADIZER.*ask_question/s', $prompt, 'a regra de divergência precisa instruir ask_question, não só mencionar as 2 palavras separadamente');
+    }
+
     public function test_extra_prompt_rules_are_appended(): void
     {
         $builder = new PromptBuilder([], extraPromptRules: 'REGRA CUSTOMIZADA DO HOST: nunca faça X.');

@@ -3,6 +3,22 @@
 Todas as mudanças notáveis deste projeto são documentadas aqui. Formato baseado em
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [0.7.2] - 2026-07-31
+
+Motivado por uma revisão geral do system prompt (`PromptBuilder::buildSystemPrompt()`) — a
+estrutura em si (princípios invioláveis numerados + blocos de mecânica por tool) já é sólida, mas
+achei uma lacuna real: a regra de prioridade entre contexto humano (`context_docs`/resposta anterior
+via `driftguard:answer`) e reflection resolve qual fato ESTRUTURAL vence, mas nunca instruía o que
+fazer quando o conteúdo humano parece CONTRADIZER o comportamento observado no código — isso só
+aconteceria hoje por inferência do model sobre a regra de "nunca invente", não por instrução
+dedicada, o que é dependente da capacidade do model e não confiável.
+
+### Added
+- Regra 5 no system prompt: quando o contexto humano (documento OU resposta anterior — as 2 fontes
+  têm a mesma autoridade em `buildMessages()`, mas só `context_docs` era citado antes) parecer
+  contradizer o código, a IA usa `ask_question` citando as duas versões em vez de resolver a
+  divergência sozinha. Regra 4 (prioridade estrutural) generalizada pra citar as 2 fontes também.
+
 ## [0.7.1] - 2026-07-31
 
 Motivado por uma revisão de segurança do modo `cli_harness` (v0.7.0): a única garantia contra o
