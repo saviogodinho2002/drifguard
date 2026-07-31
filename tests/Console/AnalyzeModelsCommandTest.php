@@ -59,8 +59,8 @@ class AnalyzeModelsCommandTest extends TestCase
     public function test_json_output_on_real_run_is_valid_json_with_proposals(): void
     {
         $fake = (new FakeAnalysisClient())
-            ->enqueueProposeUpdate(['descricao' => 'Autor de blog.', 'notas' => 'x'])
-            ->enqueueProposeUpdate(['descricao' => 'Post de blog.', 'notas' => 'y']);
+            ->enqueueProposeUpdate(['descricao' => 'Autor de blog.', 'notas' => 'x'], usage: ['cost_usd' => 0.01, 'prompt_tokens' => 50, 'completion_tokens' => 10])
+            ->enqueueProposeUpdate(['descricao' => 'Post de blog.', 'notas' => 'y'], usage: ['cost_usd' => 0.02, 'prompt_tokens' => 60, 'completion_tokens' => 20]);
         $this->app->bind(AnalysisClient::class, fn() => $fake);
 
         Artisan::call('driftguard:analyze', ['--model' => ['Author', 'Post'], '--json' => true]);
@@ -70,5 +70,53 @@ class AnalyzeModelsCommandTest extends TestCase
         $this->assertIsArray($decoded, 'saída deveria ser JSON válido, recebido: ' . $saida);
         $this->assertArrayHasKey('Author', $decoded['proposals']);
         $this->assertArrayHasKey('Post', $decoded['proposals']);
+
+        $this->assertArrayHasKey('usage', $decoded, 'gap real reportado em teste: --json não expunha custo/tokens');
+        $this->assertEqualsWithDelta(0.03, $decoded['usage']['cost_usd'], 0.0001);
+        $this->assertSame(110, $decoded['usage']['prompt_tokens']);
+        $this->assertSame(30, $decoded['usage']['completion_tokens']);
+    }
+
+    /** Nenhum model a analisar não chama runAnalysis() — usage precisa manter a MESMA forma (nulls) pro JSON ser previsível. */
+    public function test_json_output_when_no_models_to_analyze_still_includes_usage_key(): void
+    {
+        // bind defensivo: este caminho não deveria chamar o cliente de análise; se chamar por
+        // engano, falha alto (exceção do fake) em vez de tentar uma requisição HTTP real.
+        $fake = new FakeAnalysisClient();
+        $this->app->bind(AnalysisClient::class, fn() => $fake);
+
+        // catálogo já tem entrada pra TODOS os models descobertos (Author, Post) — sem --force e
+        // sem --model, findMissingModels() fica vazio.
+        file_put_contents($this->tmpOutputConfig, "<?php\nreturn ['Author' => ['descricao' => 'x'], 'Post' => ['descricao' => 'y']];\n");
+
+        // context.json com last_commit_hash = HEAD atual: modelsChangedSinceLastRun() faz
+        // `git diff {hash}..HEAD`, que fica vazio (nenhum commit novo desde a escrita deste
+        // arquivo) — sem isso, o range default (HEAD~10..HEAD) pega qualquer mudança recente real
+        // no repo em Author.php/Post.php e reinclui os models na lista, tornando o teste instável.
+        if (!is_dir($this->tmpStorage)) {
+            mkdir($this->tmpStorage, 0755, true);
+        }
+        $head = trim(shell_exec('git rev-parse HEAD') ?? '');
+        file_put_contents("{$this->tmpStorage}/context.json", json_encode(['last_commit_hash' => $head]));
+
+        Artisan::call('driftguard:analyze', ['--json' => true]);
+        $decoded = json_decode(Artisan::output(), true);
+
+        $this->assertSame([], $decoded['models'], 'pré-condição do teste: lista de models a analisar devia estar vazia');
+        $this->assertArrayHasKey('usage', $decoded);
+        $this->assertSame(['cost_usd' => null, 'prompt_tokens' => null, 'completion_tokens' => null], $decoded['usage']);
+    }
+
+    /** Caminho "nenhuma proposta retornada" (cliente não propôs nem perguntou) também expõe usage. */
+    public function test_json_output_when_no_proposal_returned_still_includes_usage_key(): void
+    {
+        $fake = new FakeAnalysisClient(); // fila vazia — chat() cai no fallback sem tool_calls
+        $this->app->bind(AnalysisClient::class, fn() => $fake);
+
+        Artisan::call('driftguard:analyze', ['--model' => ['Post'], '--json' => true]);
+        $decoded = json_decode(Artisan::output(), true);
+
+        $this->assertArrayHasKey('usage', $decoded);
+        $this->assertSame(['cost_usd' => null, 'prompt_tokens' => null, 'completion_tokens' => null], $decoded['usage']);
     }
 }

@@ -152,12 +152,13 @@ class ModelSyncService
      *        pra esta rodada — manda tudo inteiro, sem extração/truncamento/corte de arquivo de
      *        apoio (regra `--full`). Só afeta QUANTO CONTEÚDO de cada model entra, nunca QUAIS
      *        models são analisados (isso continua sendo decidido por `resolveRunState()`).
-     * @return array{proposals: array<string, array>, questions: array<int, array>}
+     * @return array{proposals: array<string, array>, questions: array<int, array>, usage: array{cost_usd: ?float, prompt_tokens: ?int, completion_tokens: ?int}}
      */
     public function runAnalysis(array $models, callable $onProgress, bool $analiseCompleta = false): array
     {
         $proposals = [];
         $questions = [];
+        $usageTotal = $this->usageVazio();
         $builder   = new PromptBuilder($this->fieldSpecs, $this->extraPromptRules);
         $respostas = $this->answeredQuestionsFor($models);
 
@@ -176,6 +177,7 @@ class ModelSyncService
             $tools    = $builder->buildTools();
 
             $resultado = $this->loopAnalise($messages, $tools, $snippets);
+            $usageTotal = $this->somarUsage($usageTotal, $resultado['usage']);
 
             if ($resultado['proposal'] !== null) {
                 $proposals[$modelo] = array_merge($metadata, $resultado['proposal']);
@@ -195,10 +197,40 @@ class ModelSyncService
             $this->recordQuestions($questions);
         }
 
-        return ['proposals' => $proposals, 'questions' => $questions];
+        return ['proposals' => $proposals, 'questions' => $questions, 'usage' => $usageTotal];
     }
 
-    /** @return array{proposal: ?array, questions: string[]} */
+    /** @return array{cost_usd: ?float, prompt_tokens: ?int, completion_tokens: ?int} */
+    private function usageVazio(): array
+    {
+        return ['cost_usd' => null, 'prompt_tokens' => null, 'completion_tokens' => null];
+    }
+
+    /**
+     * Soma null-safe: parcela `null` não participa da soma (não vira 0); se as 2 parcelas de um
+     * campo forem `null`, o total continua `null` (nunca inventa dado que nenhum provedor expôs).
+     *
+     * @param array{cost_usd: ?float, prompt_tokens: ?int, completion_tokens: ?int} $a
+     * @param array{cost_usd: ?float, prompt_tokens: ?int, completion_tokens: ?int} $b
+     * @return array{cost_usd: ?float, prompt_tokens: ?int, completion_tokens: ?int}
+     */
+    private function somarUsage(array $a, array $b): array
+    {
+        $somarCampo = function ($x, $y) {
+            if ($x === null && $y === null) {
+                return null;
+            }
+            return ($x ?? 0) + ($y ?? 0);
+        };
+
+        return [
+            'cost_usd'          => $somarCampo($a['cost_usd'] ?? null, $b['cost_usd'] ?? null),
+            'prompt_tokens'     => $somarCampo($a['prompt_tokens'] ?? null, $b['prompt_tokens'] ?? null),
+            'completion_tokens' => $somarCampo($a['completion_tokens'] ?? null, $b['completion_tokens'] ?? null),
+        ];
+    }
+
+    /** @return array{proposal: ?array, questions: string[], usage: array{cost_usd: ?float, prompt_tokens: ?int, completion_tokens: ?int}} */
     private function loopAnalise(array $messages, array $tools, array &$snippets): array
     {
         $camposEscopo = array_map(
@@ -206,13 +238,15 @@ class ModelSyncService
             array_values(array_filter($this->fieldSpecs, fn($s) => $s->type === FieldSpec::TYPE_SCOPE_CLASS))
         );
         $tentouCorrigirEscopo = false;
+        $usageAcumulado = $this->usageVazio();
 
         for ($i = 0; $i < self::MAX_ANALYSIS_ITER; $i++) {
             $resposta  = $this->client->chat($messages, $tools);
+            $usageAcumulado = $this->somarUsage($usageAcumulado, $resposta['usage'] ?? $this->usageVazio());
             $toolCalls = $resposta['tool_calls'] ?? [];
 
             if (empty($toolCalls)) {
-                return ['proposal' => null, 'questions' => []];
+                return ['proposal' => null, 'questions' => [], 'usage' => $usageAcumulado];
             }
 
             foreach ($toolCalls as $chamada) {
@@ -238,11 +272,11 @@ class ModelSyncService
                         }
                     }
 
-                    return ['proposal' => $args, 'questions' => []];
+                    return ['proposal' => $args, 'questions' => [], 'usage' => $usageAcumulado];
                 }
 
                 if ($nome === 'ask_question') {
-                    return ['proposal' => null, 'questions' => [$args['question'] ?? '']];
+                    return ['proposal' => null, 'questions' => [$args['question'] ?? ''], 'usage' => $usageAcumulado];
                 }
 
                 if ($nome === 'request_file') {
@@ -272,7 +306,7 @@ class ModelSyncService
             }
         }
 
-        return ['proposal' => null, 'questions' => ['Análise excedeu o limite de iterações sem propor nem perguntar.']];
+        return ['proposal' => null, 'questions' => ['Análise excedeu o limite de iterações sem propor nem perguntar.'], 'usage' => $usageAcumulado];
     }
 
     /**

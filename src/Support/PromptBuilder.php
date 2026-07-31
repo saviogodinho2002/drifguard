@@ -39,6 +39,12 @@ class PromptBuilder
            resolva a divergência sozinho nem escolha um lado em silêncio: use ask_question citando
            as duas versões (o que a fonte humana diz vs. o que o código parece indicar) e deixe a
            decisão pra quem revisar.
+        6. Se você observar 2+ arquivos do PRÓPRIO código implementando a mesma regra de negócio de
+           formas que parecem DIVERGIR entre si (ex: pontos de entrada diferentes filtrando/validando
+           de jeitos diferentes) — não é caso da regra 1 (fato estrutural) nem da regra 5 (fonte
+           humana vs. código) — NÃO escolha a versão que parecer mais "correta" ou "limpa" em
+           silêncio: use ask_question citando os arquivos e o comportamento observado em cada um, e
+           deixe pra quem revisar decidir qual (ou se nenhuma) está certa.
         TXT;
 
         $regrasDeCampo = $this->regrasPorCampo();

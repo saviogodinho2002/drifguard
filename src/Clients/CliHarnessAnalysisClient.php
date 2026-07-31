@@ -92,7 +92,7 @@ class CliHarnessAnalysisClient implements AnalysisClient
             }
             $resultado = $processo->run($args);
         } catch (\Throwable $e) {
-            return ['content' => null, 'tool_calls' => []];
+            return ['content' => null, 'tool_calls' => [], 'usage' => $this->usageVazio()];
         } finally {
             if (!empty($modosOriginais)) {
                 (new ReadOnlyLock())->destravar($modosOriginais);
@@ -100,10 +100,11 @@ class CliHarnessAnalysisClient implements AnalysisClient
         }
 
         if (!$resultado->successful()) {
-            return ['content' => null, 'tool_calls' => []];
+            return ['content' => null, 'tool_calls' => [], 'usage' => $this->usageVazio()];
         }
 
         ['texto' => $texto, 'custo' => $custo] = $this->extrairTextoECusto($resultado->output());
+        $usage = ['cost_usd' => $custo, 'prompt_tokens' => null, 'completion_tokens' => null];
 
         if ($custo !== null) {
             Log::info('[driftguard] CliHarnessAnalysisClient: custo da chamada', [
@@ -113,12 +114,12 @@ class CliHarnessAnalysisClient implements AnalysisClient
         }
 
         if ($texto === null) {
-            return ['content' => null, 'tool_calls' => []];
+            return ['content' => null, 'tool_calls' => [], 'usage' => $usage];
         }
 
         $chamada = $this->parseChamada($texto);
         if ($chamada === null) {
-            return ['content' => null, 'tool_calls' => []];
+            return ['content' => null, 'tool_calls' => [], 'usage' => $usage];
         }
 
         return [
@@ -130,7 +131,14 @@ class CliHarnessAnalysisClient implements AnalysisClient
                     'arguments' => json_encode($chamada['arguments'] ?? []),
                 ],
             ]],
+            'usage' => $usage,
         ];
+    }
+
+    /** @return array{cost_usd: ?float, prompt_tokens: ?int, completion_tokens: ?int} */
+    private function usageVazio(): array
+    {
+        return ['cost_usd' => null, 'prompt_tokens' => null, 'completion_tokens' => null];
     }
 
     /** @param array<int, array{role: string, content: mixed}> $messages */

@@ -63,6 +63,22 @@ class PromptBuilderTest extends TestCase
         $this->assertMatchesRegularExpression('/CONTRADIZER.*ask_question/s', $prompt, 'a regra de divergência precisa instruir ask_question, não só mencionar as 2 palavras separadamente');
     }
 
+    /**
+     * Achado num teste real do usuário: uma instrução de field quase idêntica à recomendação do
+     * README (preferir ask_question quando pontos de entrada divergem) não foi suficiente pra IA
+     * sinalizar a divergência — sempre convergiu em silêncio pra 1 interpretação. Regra 6 promove
+     * esse caso pro bloco de regras invioláveis do prompt base (mesmo peso da regra 5), em vez de
+     * depender só de instrução solta em field/extra_prompt_rules.
+     */
+    public function test_system_prompt_instructs_ask_question_on_divergence_between_multiple_code_files(): void
+    {
+        $prompt = (new PromptBuilder([]))->buildSystemPrompt();
+
+        $this->assertStringContainsString('DIVERGIR', $prompt);
+        $this->assertStringContainsString('PRÓPRIO código', $prompt);
+        $this->assertMatchesRegularExpression('/DIVERGIR.*ask_question/s', $prompt, 'a regra 6 precisa instruir ask_question, não só mencionar divergência');
+    }
+
     public function test_extra_prompt_rules_are_appended(): void
     {
         $builder = new PromptBuilder([], extraPromptRules: 'REGRA CUSTOMIZADA DO HOST: nunca faça X.');

@@ -105,6 +105,41 @@ class ModelSyncServiceIntegrationTest extends TestCase
         }
     }
 
+    /**
+     * Gap real achado em teste de usuário: nenhum driver expunha custo/tokens em `--json`.
+     * `runAnalysis()` precisa somar o usage de TODAS as chamadas de chat() dentro de 1 model
+     * (aqui: request_file força uma 2ª chamada) num total da rodada.
+     */
+    public function test_usage_across_multiple_chat_calls_within_one_model_is_summed(): void
+    {
+        $arquivo = __DIR__ . '/../Fixtures/Models/Post.php';
+
+        $client = (new FakeAnalysisClient())
+            ->enqueueRequestFile($arquivo, usage: ['cost_usd' => 0.01, 'prompt_tokens' => 100, 'completion_tokens' => 20])
+            ->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y'], usage: ['cost_usd' => 0.02, 'prompt_tokens' => 150, 'completion_tokens' => 30]);
+
+        $service = $this->makeService($client, allowedBasePath: __DIR__ . '/../Fixtures');
+
+        $result = $service->runAnalysis(['Post'], fn() => null);
+
+        $this->assertEqualsWithDelta(0.03, $result['usage']['cost_usd'], 0.0001);
+        $this->assertSame(250, $result['usage']['prompt_tokens']);
+        $this->assertSame(50, $result['usage']['completion_tokens']);
+    }
+
+    /** Soma null-safe: se nenhum provedor reportou usage, o total fica null — nunca vira 0 por engano. */
+    public function test_usage_stays_null_when_no_provider_reports_it(): void
+    {
+        $client  = (new FakeAnalysisClient())->enqueueProposeUpdate(['descricao' => 'x', 'notas' => 'y']);
+        $service = $this->makeService($client);
+
+        $result = $service->runAnalysis(['Post'], fn() => null);
+
+        $this->assertNull($result['usage']['cost_usd']);
+        $this->assertNull($result['usage']['prompt_tokens']);
+        $this->assertNull($result['usage']['completion_tokens']);
+    }
+
     public function test_ask_question_path_produces_pending_question_not_proposal(): void
     {
         $client  = (new FakeAnalysisClient())->enqueueAskQuestion('Este campo é obrigatório em algum fluxo de negócio específico?');

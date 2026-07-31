@@ -71,6 +71,7 @@ class CliHarnessAnalysisClientTest extends TestCase
             ['descricao' => 'Uma descrição.'],
             json_decode($resultado['tool_calls'][0]['function']['arguments'], true)
         );
+        $this->assertSame(0.0123, $resultado['usage']['cost_usd'], 'custo do total_cost_usd deveria ser extraído pro retorno, não só logado');
     }
 
     public function test_response_wrapped_in_markdown_fence_is_still_parsed(): void
@@ -112,6 +113,11 @@ class CliHarnessAnalysisClientTest extends TestCase
         );
     }
 
+    private function usageVazio(): array
+    {
+        return ['cost_usd' => null, 'prompt_tokens' => null, 'completion_tokens' => null];
+    }
+
     public function test_non_json_output_degrades_to_empty_tool_calls_without_exception(): void
     {
         $script = $this->fakeCommand("echo 'isso não é json nenhum';");
@@ -119,7 +125,7 @@ class CliHarnessAnalysisClientTest extends TestCase
         $client = new CliHarnessAnalysisClient(command: $script, extraArgs: []);
         $resultado = $client->chat([], $this->toolsBasicos());
 
-        $this->assertSame(['content' => null, 'tool_calls' => []], $resultado);
+        $this->assertSame(['content' => null, 'tool_calls' => [], 'usage' => $this->usageVazio()], $resultado);
     }
 
     public function test_result_field_missing_degrades_to_empty_tool_calls(): void
@@ -129,7 +135,7 @@ class CliHarnessAnalysisClientTest extends TestCase
         $client = new CliHarnessAnalysisClient(command: $script, extraArgs: []);
         $resultado = $client->chat([], $this->toolsBasicos());
 
-        $this->assertSame(['content' => null, 'tool_calls' => []], $resultado);
+        $this->assertSame(['content' => null, 'tool_calls' => [], 'usage' => $this->usageVazio()], $resultado);
     }
 
     public function test_nonexistent_command_degrades_safely(): void
@@ -137,7 +143,7 @@ class CliHarnessAnalysisClientTest extends TestCase
         $client = new CliHarnessAnalysisClient(command: '/caminho/que/definitivamente/nao/existe/xyz', extraArgs: []);
         $resultado = $client->chat([], $this->toolsBasicos());
 
-        $this->assertSame(['content' => null, 'tool_calls' => []], $resultado);
+        $this->assertSame(['content' => null, 'tool_calls' => [], 'usage' => $this->usageVazio()], $resultado);
     }
 
     public function test_timeout_degrades_safely(): void
@@ -147,7 +153,7 @@ class CliHarnessAnalysisClientTest extends TestCase
         $client = new CliHarnessAnalysisClient(command: $script, extraArgs: [], timeoutSeconds: 1);
         $resultado = $client->chat([], $this->toolsBasicos());
 
-        $this->assertSame(['content' => null, 'tool_calls' => []], $resultado);
+        $this->assertSame(['content' => null, 'tool_calls' => [], 'usage' => $this->usageVazio()], $resultado);
     }
 
     public function test_json_stream_format_finds_step_finish_event(): void
@@ -188,6 +194,7 @@ class CliHarnessAnalysisClientTest extends TestCase
 
         $this->assertCount(1, $resultado['tool_calls']);
         $this->assertSame('propose_update', $resultado['tool_calls'][0]['function']['name']);
+        $this->assertNull($resultado['usage']['cost_usd'], 'preset sem cost_field (ex: Gemini CLI hoje) não deveria inventar custo');
     }
 
     /** allowedBasePath/harnessTools precisam virar argumentos de verdade no processo, não só na config. */

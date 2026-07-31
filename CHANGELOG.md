@@ -3,6 +3,30 @@
 Todas as mudanças notáveis deste projeto são documentadas aqui. Formato baseado em
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [0.7.3] - 2026-07-31
+
+Motivado por 2 achados reais de um usuário testando o pacote ponta a ponta: (1) `analyze --json` no
+driver `openrouter` descartava o `usage` que a própria API já retorna (custo/tokens), e o
+`cli_harness` calculava custo mas só logava, nunca expunha em lugar nenhum parseável; (2) mesmo com
+uma instrução de field quase idêntica à recomendação já documentada (preferir `ask_question` quando
+pontos de entrada de código divergem entre si), o modelo nunca sinalizou a divergência — convergiu
+em silêncio pra 1 interpretação. O 1º é lacuna de feature; o 2º mostrou que instrução solta em field
+não teve peso suficiente, então esse caso foi promovido pro bloco de regras invioláveis do prompt
+base, mesmo padrão de autoridade da regra 5 (divergência humano-vs-código, v0.7.2).
+
+### Added
+- `AnalysisClient::chat()` agora devolve `usage: {cost_usd, prompt_tokens, completion_tokens}`
+  (best-effort — `null` quando o provedor não expõe, nunca inventado). `OpenRouterAnalysisClient`
+  passa a ler o `usage` que a API já retorna (validado com chamada real: `cost` vem preenchido por
+  padrão, sem parâmetro extra); `CliHarnessAnalysisClient` passa a devolver o custo que já calculava
+  internamente, em vez de só logar. `ModelSyncService` soma o `usage` de todas as chamadas de uma
+  rodada (null-safe: total só fica `null` se NENHUMA chamada reportou nada). `analyze --json` expõe
+  o total em `usage`.
+- Regra 6 no system prompt (`PromptBuilder::buildSystemPrompt()`): quando 2+ arquivos do PRÓPRIO
+  código implementam a mesma regra de negócio de formas que parecem divergir entre si, a IA usa
+  `ask_question` citando os arquivos e o comportamento observado em cada um, em vez de escolher a
+  versão que parecer mais "correta" em silêncio.
+
 ## [0.7.2] - 2026-07-31
 
 Motivado por uma revisão geral do system prompt (`PromptBuilder::buildSystemPrompt()`) — a

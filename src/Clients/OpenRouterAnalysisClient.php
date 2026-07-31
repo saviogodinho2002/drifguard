@@ -21,12 +21,14 @@ class OpenRouterAnalysisClient implements AnalysisClient
         private readonly int $maxTokens = 8000,
         private readonly int $timeoutSeconds = 300,
         private readonly array $extraHeaders = [],
+        /** Seam de teste — injete um Client com MockHandler pra não bater na API real. Null usa um Client de verdade. */
+        private readonly ?Client $httpClient = null,
     ) {
     }
 
     public function chat(array $messages, array $tools): array
     {
-        $client = new Client(['timeout' => $this->timeoutSeconds]);
+        $client = $this->httpClient ?? new Client(['timeout' => $this->timeoutSeconds]);
 
         $response = $client->post(self::URL, [
             'headers' => array_merge([
@@ -44,10 +46,16 @@ class OpenRouterAnalysisClient implements AnalysisClient
 
         $dados   = json_decode((string) $response->getBody(), true);
         $message = $dados['choices'][0]['message'] ?? [];
+        $usage   = $dados['usage'] ?? [];
 
         return [
-            'content'   => $message['content'] ?? null,
+            'content'    => $message['content'] ?? null,
             'tool_calls' => $message['tool_calls'] ?? [],
+            'usage'      => [
+                'cost_usd'          => $usage['cost'] ?? null,
+                'prompt_tokens'     => $usage['prompt_tokens'] ?? null,
+                'completion_tokens' => $usage['completion_tokens'] ?? null,
+            ],
         ];
     }
 }

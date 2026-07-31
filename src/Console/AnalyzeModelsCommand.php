@@ -65,7 +65,7 @@ class AnalyzeModelsCommand extends Command
 
         if (empty($modelsList)) {
             if ($json) {
-                $this->line(json_encode(['mode' => $mode, 'models' => [], 'proposals' => [], 'questions' => []]));
+                $this->line(json_encode(['mode' => $mode, 'models' => [], 'proposals' => [], 'questions' => [], 'usage' => self::usageVazio()]));
                 return self::SUCCESS;
             }
             $this->info('Nenhuma mudança detectada desde a última análise.');
@@ -96,7 +96,7 @@ class AnalyzeModelsCommand extends Command
 
         if (empty($proposals) && empty($questions)) {
             if ($json) {
-                $this->line(json_encode(['mode' => $mode, 'models' => $modelsList, 'proposals' => [], 'questions' => [], 'error' => 'nenhuma proposta retornada']));
+                $this->line(json_encode(['mode' => $mode, 'models' => $modelsList, 'proposals' => [], 'questions' => [], 'usage' => $result['usage'], 'error' => 'nenhuma proposta retornada']));
             } else {
                 $this->warn('Nenhuma proposta retornada. Verifique a configuração do cliente de análise (chave de API etc).');
             }
@@ -121,6 +121,7 @@ class AnalyzeModelsCommand extends Command
                 'models'    => $modelsList,
                 'proposals' => $proposals,
                 'questions' => $questions,
+                'usage'     => $result['usage'],
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
             return self::SUCCESS;
         }
@@ -136,5 +137,11 @@ class AnalyzeModelsCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /** @return array{cost_usd: ?float, prompt_tokens: ?int, completion_tokens: ?int} */
+    private static function usageVazio(): array
+    {
+        return ['cost_usd' => null, 'prompt_tokens' => null, 'completion_tokens' => null];
     }
 }

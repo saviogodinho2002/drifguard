@@ -77,7 +77,7 @@ Todo command aceita `--json` (saída estruturada em vez de tabela/cores):
 ```bash
 php artisan driftguard:doctor --json                # {ok: bool, checks: [{status, item, detalhe}, ...]}
 php artisan driftguard:analyze --dry-run --json    # prévia sem custo, parseável
-php artisan driftguard:analyze --json              # roda e devolve {mode, models, proposals, questions}
+php artisan driftguard:analyze --json              # roda e devolve {mode, models, proposals, questions, usage}
 php artisan driftguard:apply --json --dry-run       # {status: "dry_run", diff: [...]}
 php artisan driftguard:apply --json --force         # aplica sem prompt interativo, {status: "applied", ...}
 php artisan driftguard:answer Post Sim --json       # {status: "answered"|"not_found", model, question}
@@ -86,6 +86,13 @@ php artisan driftguard:answer Post Sim --json       # {status: "answered"|"not_f
 `driftguard:apply --json` **sem** `--force` nunca aplica — devolve `{status: "confirmation_required", diff}`
 e sai com código de erro, pra uma execução headless nunca gravar mudança por engano só por ter
 esquecido `--dry-run`.
+
+`usage` (em `analyze --json`) é `{cost_usd, prompt_tokens, completion_tokens}`, somado ao longo de
+TODAS as chamadas ao LLM da rodada (pode haver mais de 1 por model, quando há `request_file`/
+`request_method`/correção de `scope_class` no meio). Cada campo é best-effort: fica `null` quando o
+provedor/preset não expõe esse dado (ex: `cli_harness` com preset `gemini`, que não expõe custo em
+modo headless hoje) — nunca inventado/estimado. Se TODO campo vier `null`, é porque nenhuma chamada
+da rodada reportou nada, não porque o custo foi zero.
 
 ## Customizando pro seu domínio
 
@@ -122,7 +129,12 @@ Tudo em `config/driftguard.php`, publicado no seu próprio projeto — edite liv
   pra resposta humana anterior via `driftguard:answer`). Veja o que está resolvido com
   `driftguard:context:list`.
 - **`extra_prompt_rules`** — meta-instrução de formato/convenção específica do seu app (não é
-  conhecimento de negócio por model — isso é `context_docs`).
+  conhecimento de negócio por model — isso é `context_docs`). O prompt base do pacote já instrui a
+  IA (regra 6 do system prompt) a preferir `ask_question` quando o PRÓPRIO código diverge de si
+  mesmo entre múltiplos arquivos (ex: 2-3 pontos de entrada filtrando/validando de formas
+  diferentes) — não é algo que você precisa lembrar de configurar. `extra_prompt_rules` continua
+  útil pra reforçar isso com um exemplo concreto do SEU domínio (veja o padrão completo na seção de
+  `scope_class` abaixo), mas não é o único mecanismo.
 - **`max_snippet_chars`** — teto de tamanho pra um arquivo (apoio OU o próprio model) acima do qual
   o pacote tenta extrair só a parte relevante antes de mandar tudo. Pro arquivo de apoio, extrai só
   os métodos que mencionam o model. Pro arquivo do PRÓPRIO model, tenta extração SEGURA primeiro
@@ -190,11 +202,10 @@ pra chave que você sobrescreve quanto pras que os próprios presets `gemini`/`o
 flag específica de outra CLI (como `--add-dir`/`--allowedTools`, do Claude Code CLI) só porque o
 preset não definiu uma equivalente.
 
-**Custo por chamada só aparece no log** — o contrato `AnalysisClient` não tem campo de custo (só
-`content`/`tool_calls`), então `CliHarnessAnalysisClient` registra o custo de cada chamada via
-`Log::info('[driftguard] CliHarnessAnalysisClient: custo da chamada', [...])` sempre que o formato
-escolhido expõe um `cost_field` — confira seu log de aplicação (`storage/logs/laravel.log` por
-padrão) pra acompanhar gasto real.
+**Custo por chamada aparece no `analyze --json`** (chave `usage`, ver seção `--json` acima) sempre
+que o formato escolhido expõe um `cost_field` — e continua sendo logado via
+`Log::info('[driftguard] CliHarnessAnalysisClient: custo da chamada', [...])` a cada chamada, útil
+pra acompanhar em tempo real (`storage/logs/laravel.log` por padrão) sem esperar a rodada terminar.
 
 **Trade-offs a considerar**:
 - **Custo/tempo por chamada pode ser maior que 1 POST HTTP no OpenRouter.** O harness gasta turnos
@@ -273,7 +284,11 @@ cegas.
 que `scope_class` existe pra resolver — centralizar a regra numa classe só. Se a instrução mandar
 "replique o que o controller faz" e existirem 2-3 pontos de entrada (ex: API + painel admin +
 import em lote) filtrando de formas ligeiramente diferentes — cenário comum em apps multi-tenant
-que cresceram organicamente, não hipotético —, a IA vai escolher uma arbitrariamente. Instrua-a a preferir `ask_question` nesse caso, nunca inferir.
+que cresceram organicamente, não hipotético —, esse é exatamente o padrão que a regra 6 do prompt
+base já cobre (preferir `ask_question` a escolher uma versão em silêncio). A instrução abaixo
+reforça isso com um exemplo concreto do domínio de tenant — não é o único mecanismo, mas ajudou:
+um teste real mostrou que uma instrução quase idêntica a esta, sozinha num field, não foi
+suficiente antes de a regra 6 existir no prompt base.
 
 Instrução recomendada como ponto de partida (adapte `Empresa`/`empresa_id` pro seu domínio):
 

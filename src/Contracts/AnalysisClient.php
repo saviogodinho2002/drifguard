@@ -16,9 +16,12 @@ interface AnalysisClient
      * assistente — o chamador decide o que fazer com content/tool_calls (propose_update,
      * ask_question, request_file são convenções do ModelSyncService, não deste contrato).
      *
+     * `usage` é best-effort — cada implementação preenche o que o provedor expõe; campo que o
+     * provedor não expõe fica `null` (nunca inventado/estimado).
+     *
      * @param array<int, array{role: string, content: mixed}> $messages
      * @param array<int, array{type: string, function: array}> $tools
-     * @return array{content: ?string, tool_calls: array<int, array{id: string, function: array{name: string, arguments: string}}>}
+     * @return array{content: ?string, tool_calls: array<int, array{id: string, function: array{name: string, arguments: string}}>, usage: array{cost_usd: ?float, prompt_tokens: ?int, completion_tokens: ?int}}
      */
     public function chat(array $messages, array $tools): array;
 }
