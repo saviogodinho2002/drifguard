@@ -140,6 +140,56 @@ class ModelSyncServiceIntegrationTest extends TestCase
         $this->assertNull($result['usage']['completion_tokens']);
     }
 
+    /**
+     * Gap real achado em teste de usuário: `writeProposal()` sobrescrevia `proposal.php` inteiro a
+     * cada `analyze`, usando só os models da rodada atual — uma proposta anterior ainda não aplicada
+     * (`apply`) desaparecia em silêncio se uma 2ª `analyze` rodasse pra outros models no meio.
+     */
+    public function test_proposal_from_a_previous_analyze_survives_a_later_analyze_of_different_models(): void
+    {
+        $client1 = (new FakeAnalysisClient())->enqueueProposeUpdate(['descricao' => 'Autor de blog.', 'notas' => 'x']);
+        $service = $this->makeService($client1);
+
+        $result1 = $service->runAnalysis(['Author'], fn() => null);
+        $service->writeProposal($result1['proposals'], []);
+
+        $client2 = (new FakeAnalysisClient())->enqueueProposeUpdate(['descricao' => 'Post de blog.', 'notas' => 'y']);
+        $service2 = $this->makeService($client2);
+
+        // MESMO storagePath (mesmo $this->tmpStorage) — outra "invocação" de analyze, sem apply no meio
+        $result2 = $service2->runAnalysis(['Post'], fn() => null);
+        $service2->writeProposal($result2['proposals'], []);
+
+        $proposta = $service->readProposal();
+        $this->assertArrayHasKey('Author', $proposta, 'proposta da 1ª rodada não deveria sumir');
+        $this->assertArrayHasKey('Post', $proposta, 'proposta da 2ª rodada deveria estar presente');
+        $this->assertSame('Autor de blog.', $proposta['Author']['descricao']);
+        $this->assertSame('Post de blog.', $proposta['Post']['descricao']);
+    }
+
+    /** Model reanalisado com o mesmo storagePath: a versão MAIS RECENTE vence (reflete o código atual). */
+    public function test_reanalyzing_the_same_model_overwrites_only_that_models_entry(): void
+    {
+        $client1 = (new FakeAnalysisClient())->enqueueProposeUpdate(['descricao' => 'Versão antiga.', 'notas' => 'x']);
+        $service = $this->makeService($client1);
+        $result1 = $service->runAnalysis(['Author'], fn() => null);
+        $service->writeProposal($result1['proposals'], []);
+
+        $clientOutro = (new FakeAnalysisClient())->enqueueProposeUpdate(['descricao' => 'Post de blog.', 'notas' => 'y']);
+        $serviceOutro = $this->makeService($clientOutro);
+        $resultOutro = $serviceOutro->runAnalysis(['Post'], fn() => null);
+        $serviceOutro->writeProposal($resultOutro['proposals'], []);
+
+        $client2 = (new FakeAnalysisClient())->enqueueProposeUpdate(['descricao' => 'Versão nova.', 'notas' => 'z']);
+        $service2 = $this->makeService($client2);
+        $result2 = $service2->runAnalysis(['Author'], fn() => null);
+        $service2->writeProposal($result2['proposals'], []);
+
+        $proposta = $service2->readProposal();
+        $this->assertSame('Versão nova.', $proposta['Author']['descricao'], 'reanálise deveria vencer sobre a proposta antiga do mesmo model');
+        $this->assertArrayHasKey('Post', $proposta, 'proposta de outro model não deveria ser afetada');
+    }
+
     public function test_ask_question_path_produces_pending_question_not_proposal(): void
     {
         $client  = (new FakeAnalysisClient())->enqueueAskQuestion('Este campo é obrigatório em algum fluxo de negócio específico?');

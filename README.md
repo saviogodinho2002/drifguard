@@ -39,6 +39,11 @@ php artisan driftguard:apply --dry-run  # mostra o diff sem aplicar
 php artisan driftguard:apply            # aplica (pede confirmação)
 ```
 
+`proposal.php` **acumula entre chamadas de `analyze`** — se você rodar `analyze` duas vezes pra
+models diferentes sem `apply` no meio, as 2 propostas convivem no mesmo arquivo (model repetido nas
+2 rodadas: a mais recente vence). `driftguard:apply` sempre esvazia `proposal.php` inteiro depois de
+aplicar — é o único jeito de limpar uma proposta já resolvida.
+
 `driftguard:doctor` também avisa (nível `WARN`, nunca falha o exit code) quando uma entrada de
 `config/models.php` não corresponde a nenhum model encontrado em `models_path` — sinal de que o
 model foi renomeado, movido ou apagado desde a última análise. O pacote **nunca remove essa entrada
@@ -286,9 +291,8 @@ que `scope_class` existe pra resolver — centralizar a regra numa classe só. S
 import em lote) filtrando de formas ligeiramente diferentes — cenário comum em apps multi-tenant
 que cresceram organicamente, não hipotético —, esse é exatamente o padrão que a regra 6 do prompt
 base já cobre (preferir `ask_question` a escolher uma versão em silêncio). A instrução abaixo
-reforça isso com um exemplo concreto do domínio de tenant — não é o único mecanismo, mas ajudou:
-um teste real mostrou que uma instrução quase idêntica a esta, sozinha num field, não foi
-suficiente antes de a regra 6 existir no prompt base.
+reforça isso com um exemplo concreto do domínio de tenant — não é o único mecanismo, mas ajuda a
+IA a citar exatamente esses pontos de entrada divergentes, em vez de uma menção genérica.
 
 Instrução recomendada como ponto de partida (adapte `Empresa`/`empresa_id` pro seu domínio):
 

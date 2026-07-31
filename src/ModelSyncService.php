@@ -538,10 +538,18 @@ class ModelSyncService
         file_put_contents($this->storagePath('context.json'), json_encode($ctx, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     }
 
-    /** @param array<string, array> $proposals */
+    /**
+     * Mescla com o que já existe em `proposal.php` (não sobrescreve) — sem isso, uma 2ª `analyze`
+     * pra outros models descartava em silêncio a proposta de uma 1ª rodada ainda não aplicada
+     * (`driftguard:apply`). Model repetido nos 2 lados: a versão desta rodada vence (reflete o
+     * código mais atual); model só na proposta antiga é preservado.
+     *
+     * @param array<string, array> $proposals
+     */
     public function writeProposal(array $proposals, array $ctx): void
     {
-        $conteudo = "<?php\n\nreturn " . var_export($proposals, true) . ";\n";
+        $mesclado = array_merge($this->readProposal(), $proposals);
+        $conteudo = "<?php\n\nreturn " . var_export($mesclado, true) . ";\n";
         file_put_contents($this->storagePath('proposal.php'), $conteudo);
     }
 

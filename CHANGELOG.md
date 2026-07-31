@@ -3,16 +3,27 @@
 Todas as mudanças notáveis deste projeto são documentadas aqui. Formato baseado em
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [0.7.4] - 2026-07-31
+
+Motivado por uma revisão de `ModelSyncService::writeProposal()`: `proposal.php` era sobrescrito
+inteiro a cada `analyze`, usando só os models daquela chamada específica — uma proposta de rodada
+anterior ainda não aplicada (`driftguard:apply`) desaparecia em silêncio se uma 2ª `analyze` rodasse
+pra outros models no meio.
+
+### Fixed
+- `ModelSyncService::writeProposal()` agora mescla com o que já existe em `proposal.php` em vez de
+  sobrescrever — model presente só na proposta antiga é preservado; model presente nos 2 lados usa
+  a versão da rodada mais recente (reflete o código mais atual). `driftguard:apply` continua sendo o
+  único jeito de esvaziar `proposal.php` (via `clearProposal()`, já existente).
+
 ## [0.7.3] - 2026-07-31
 
-Motivado por 2 achados reais de um usuário testando o pacote ponta a ponta: (1) `analyze --json` no
-driver `openrouter` descartava o `usage` que a própria API já retorna (custo/tokens), e o
-`cli_harness` calculava custo mas só logava, nunca expunha em lugar nenhum parseável; (2) mesmo com
-uma instrução de field quase idêntica à recomendação já documentada (preferir `ask_question` quando
-pontos de entrada de código divergem entre si), o modelo nunca sinalizou a divergência — convergiu
-em silêncio pra 1 interpretação. O 1º é lacuna de feature; o 2º mostrou que instrução solta em field
-não teve peso suficiente, então esse caso foi promovido pro bloco de regras invioláveis do prompt
-base, mesmo padrão de autoridade da regra 5 (divergência humano-vs-código, v0.7.2).
+Motivado por 2 lacunas reais: (1) `analyze --json` no driver `openrouter` descartava o `usage` que a
+própria API já retorna (custo/tokens), e o `cli_harness` calculava custo mas só logava, nunca expunha
+em lugar nenhum parseável; (2) instrução solta em field (preferir `ask_question` quando pontos de
+entrada de código divergem entre si) não tem peso suficiente sozinha — esse caso foi promovido pro
+bloco de regras invioláveis do prompt base, mesmo padrão de autoridade da regra 5 (divergência
+humano-vs-código, v0.7.2).
 
 ### Added
 - `AnalysisClient::chat()` agora devolve `usage: {cost_usd, prompt_tokens, completion_tokens}`
