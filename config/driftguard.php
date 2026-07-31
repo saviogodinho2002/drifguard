@@ -71,6 +71,13 @@ return [
         // Só usado quando 'driver' => 'cli_harness'. Escolha um preset e opcionalmente
         // sobrescreva chaves específicas em 'cli_harness' (mesmo padrão de override do resto do pacote).
         'cli_harness_preset' => 'claude', // 'claude' | 'gemini' | 'opencode'
+
+        // Trava allowed_base_path contra escrita no sistema de arquivos durante a exploração do
+        // harness (ver Support\ReadOnlyLock) — funciona igual pros 3 presets, independente de a CLI
+        // alvo ter allowlist de tool própria. Não funciona em Windows (chmod não impõe restrição real
+        // de diretório lá); nesse caso é automaticamente ignorado, sem precisar desligar aqui.
+        'readonly_lock' => true,
+
         'cli_harness'        => [
             // qualquer chave aqui sobrescreve o preset escolhido, ex: 'timeout' => 600
         ],

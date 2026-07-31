@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Saviogodinho2002\DriftGuard\Contracts\AnalysisClient;
 use Saviogodinho2002\DriftGuard\Support\BraceMatcher;
+use Saviogodinho2002\DriftGuard\Support\ReadOnlyLock;
 
 /**
  * Provedor alternativo de análise: em vez de uma API stateless (OpenRouter), invoca um agente-CLI
@@ -14,14 +15,25 @@ use Saviogodinho2002\DriftGuard\Support\BraceMatcher;
  * ponte com o contrato stateless de `AnalysisClient` é feita aqui: 1 chamada de `chat()` = 1
  * invocação não-interativa do CLI, cuja resposta final é interpretada como exatamente 1 tool call.
  *
- * Só o preset padrão (Claude Code CLI) foi validado com uma chamada real contra um model de
- * produção antes deste código ser escrito — resultado: JSON limpo, saída rica (cross-referências
- * que o harness descobriu sozinho via Grep), custo real de US$0.3959 pro model MENOR de uma
- * amostra de 5. Presets de Gemini CLI/opencode seguem documentação oficial + issues públicas do
- * GitHub encontradas na pesquisa (gemini-cli#9009, opencode#26855) — não testados ao vivo aqui.
+ * Segurança durante a exploração, em 3 camadas independentes (nenhuma sozinha é suficiente):
+ * 1. `ReadOnlyLock` (`readonlyLock`) — trava o diretório contra escrita no sistema de arquivos
+ *    antes de rodar o subprocesso. Funciona igual pros 3 presets, independente de a CLI alvo ter
+ *    flag própria de restrição de tool. Não funciona em Windows (ver `ReadOnlyLock`).
+ * 2. `dirFlag`/`toolsFlag` — allowlist de tool da própria CLI alvo, quando ela suporta (hoje só o
+ *    preset `claude` tem `tools_flag` confirmado; `gemini`/`opencode` não têm equivalente
+ *    documentado).
+ * 3. `DENYLIST_TOOLS` — piso de código: `Bash`/`Write`/`Edit`/`NotebookEdit` nunca entram na
+ *    allowlist passada pra CLI, mesmo que configurado explicitamente pelo host.
+ *
+ * O preset `claude` (Claude Code CLI) é o único validado com uma chamada real de ponta a ponta
+ * contra um model de produção. Presets `gemini`/`opencode` seguem a documentação oficial de cada
+ * CLI — ajuste `cli_harness` se a versão instalada usar uma flag diferente.
  */
 class CliHarnessAnalysisClient implements AnalysisClient
 {
+    /** @var string[] Tools que mutam estado — nunca entram na allowlist, mesmo configuradas explicitamente. */
+    private const DENYLIST_TOOLS = ['Bash', 'Write', 'Edit', 'NotebookEdit'];
+
     public function __construct(
         private readonly string $command = 'claude',
         /** @var string[] */
@@ -35,13 +47,23 @@ class CliHarnessAnalysisClient implements AnalysisClient
         private readonly int $timeoutSeconds = 300,
         /** Diretório que o harness pode explorar sozinho — mesmo princípio de allowed_base_path do request_file. */
         private readonly ?string $allowedBasePath = null,
-        /** @var string[] Ferramentas que o próprio CLI pode usar pra explorar — nunca inclui Bash/Write/Edit por padrão. */
-        private readonly array $harnessTools = ['Read', 'Grep', 'Glob'],
+        /** @var string[] Ferramentas que o próprio CLI pode usar pra explorar — DENYLIST_TOOLS é removida daqui sempre, mesmo se configurado. */
+        private array $harnessTools = ['Read', 'Grep', 'Glob'],
         /** Flag de restrição de diretório do CLI alvo (ex: '--add-dir' pro Claude Code CLI). Null = CLI não documenta uma. */
         private readonly ?string $dirFlag = '--add-dir',
         /** Flag de allowlist de ferramentas do CLI alvo (ex: '--allowedTools'). Null = CLI não documenta uma. */
         private readonly ?string $toolsFlag = '--allowedTools',
+        /** Trava o diretório contra escrita no sistema de arquivos durante a chamada (camada 1 — ver docblock da classe). */
+        private readonly bool $readonlyLock = true,
     ) {
+        $pedidas = $this->harnessTools;
+        $this->harnessTools = array_values(array_diff($this->harnessTools, self::DENYLIST_TOOLS));
+
+        if (empty($this->harnessTools) && !empty($pedidas)) {
+            Log::warning('[driftguard] CliHarnessAnalysisClient: todas as tools pedidas foram bloqueadas por segurança (Bash/Write/Edit/NotebookEdit nunca são permitidas)', [
+                'pedidas' => $pedidas,
+            ]);
+        }
     }
 
     public function chat(array $messages, array $tools): array
@@ -58,6 +80,11 @@ class CliHarnessAnalysisClient implements AnalysisClient
             $args[] = implode(',', $this->harnessTools);
         }
 
+        $modosOriginais = [];
+        if ($this->readonlyLock && $this->allowedBasePath !== null) {
+            $modosOriginais = (new ReadOnlyLock())->travar($this->allowedBasePath);
+        }
+
         try {
             $processo = Process::timeout($this->timeoutSeconds);
             if ($this->allowedBasePath !== null) {
@@ -66,6 +93,10 @@ class CliHarnessAnalysisClient implements AnalysisClient
             $resultado = $processo->run($args);
         } catch (\Throwable $e) {
             return ['content' => null, 'tool_calls' => []];
+        } finally {
+            if (!empty($modosOriginais)) {
+                (new ReadOnlyLock())->destravar($modosOriginais);
+            }
         }
 
         if (!$resultado->successful()) {

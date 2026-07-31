@@ -210,6 +210,39 @@ padrão) pra acompanhar gasto real.
   `gemini` já reflete isso, `cost_field => null`). opencode expõe custo num evento `step_finish`
   dentro de um stream de JSON, não num objeto único.
 
+### Segurança durante a exploração: 3 camadas independentes
+
+O harness explora o código sozinho, então "o que garante que ele não vai escrever/executar algo
+indevido?" tem uma resposta em camadas — nenhuma sozinha é o bastante:
+
+1. **`readonly_lock`** (default `true`) — trava `allowed_base_path` contra escrita no sistema de
+   arquivos ANTES de rodar o subprocesso, e restaura o modo original de cada arquivo depois (mesmo
+   se a chamada falhar ou estourar timeout). É a defesa PRINCIPAL: funciona igual pros 3 presets,
+   independente de a CLI alvo ter allowlist de tool própria. `storage/`, `bootstrap/cache/`,
+   `vendor/`, `node_modules/` e `.git/` nunca são travados, mesmo dentro de `allowed_base_path`
+   (travar `storage/` quebraria log/cache/sessão de requests concorrentes rodando ao mesmo tempo).
+   **Não funciona no Windows** — `chmod()` lá não impõe restrição real de diretório (só um
+   atributo cosmético) — nesse caso é desabilitado automaticamente, sem precisar desligar na mão;
+   `driftguard:doctor` avisa quando isso acontece.
+2. **`--allowedTools`/`--add-dir`** — allowlist de tool da própria CLI alvo, quando ela suporta
+   (hoje só o preset `claude` tem `tools_flag` confirmado; `gemini`/`opencode` não têm equivalente
+   documentado — `driftguard:doctor` avisa disso também).
+3. **Denylist de código** — `Bash`/`Write`/`Edit`/`NotebookEdit` nunca entram na allowlist passada
+   pra CLI, mesmo que você configure `harness_tools` incluindo alguma delas por engano.
+
+Isso é só a segurança **durante a exploração**. Depois que o harness responde, a saída passa pelo
+MESMO portão de revisão que qualquer outro provedor: nunca escreve `config/models.php` direto (só
+`proposal.php` → `driftguard:apply --dry-run` → confirmação), e um campo `scope_class` proposto
+passa pelas mesmas 3 guardas de sempre (`ScopeClassWriter::sanitize()` → checagem semântica →
+`php -l`) antes de virar arquivo `.php` — o harness nunca escreve arquivo, só propõe uma string.
+
+**Por que não chamar a CLI direto, sem passar pelo driftguard?** Porque o que o driftguard garante
+não é "chamar a IA com segurança" (isso as 3 camadas acima resolvem) — é tudo em volta disso, que
+se perde num `claude -p "documenta meus models"` avulso: fatos estruturais (tabela/campos/relações)
+sempre por reflection real, nunca pela IA (mesmo que o harness erre um nome de coluna, reflection
+sempre vence no merge final); detecção incremental via `git diff`, só reanalisa o que mudou; e o
+portão de revisão humana + as guardas de `scope_class` do parágrafo anterior.
+
 ## Multi-tenancy: escrevendo uma boa instrução pra `scope_class`
 
 `scope_class` é o field mais delicado de instruir bem, porque a resposta certa depende de *onde* a

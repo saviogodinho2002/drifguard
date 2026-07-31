@@ -129,6 +129,12 @@ class DoctorCommand extends Command
             $checks[] = ['WARN', "env:{$apiKeyEnv}", 'não definida — driftguard:analyze vai falhar até configurar'];
         }
 
+        if (($config['llm']['driver'] ?? 'openrouter') === 'cli_harness') {
+            foreach ($this->checksHarness($config['llm'] ?? []) as $check) {
+                $checks[] = $check;
+            }
+        }
+
         if ($this->option('json')) {
             $checksChaveados = array_map(fn($c) => ['status' => $c[0], 'item' => $c[1], 'detalhe' => $c[2]], $checks);
             $this->line(json_encode(['ok' => !$falhou, 'checks' => $checksChaveados], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
@@ -138,5 +144,57 @@ class DoctorCommand extends Command
         $this->table(['Status', 'Item', 'Detalhe'], $checks);
 
         return $falhou ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * Checks do modo `cli_harness` (regra de segurança em camadas — ver docblock de
+     * `CliHarnessAnalysisClient`). Nunca falha o exit code (WARN), só alerta ANTES de rodar
+     * `analyze` de verdade.
+     *
+     * @param array $llm config('driftguard.llm')
+     * @return array<int, array{0: string, 1: string, 2: string}>
+     */
+    private function checksHarness(array $llm): array
+    {
+        $checks = [];
+
+        $presetNome = $llm['cli_harness_preset'] ?? 'claude';
+        $preset     = $llm['cli_harness_presets'][$presetNome] ?? $llm['cli_harness_presets']['claude'] ?? [];
+        $harness    = array_merge($preset, $llm['cli_harness'] ?? []);
+        $valor      = fn(string $chave, $default) => array_key_exists($chave, $harness) ? $harness[$chave] : $default;
+
+        $readonlyLock = $llm['readonly_lock'] ?? true;
+
+        if ($this->osFamily() === 'Windows') {
+            $checks[] = ['WARN', 'llm.readonly_lock', "modo harness ativo, mas o bloqueio de escrita no "
+                . "sistema de arquivos não funciona no Windows (chmod não impõe restrição real de "
+                . "diretório lá) — desabilitado automaticamente. A defesa durante a exploração fica só "
+                . "com --allowedTools da CLI (se o preset '{$presetNome}' tiver) + a denylist de código."];
+        } elseif (!$readonlyLock) {
+            $checks[] = ['WARN', 'llm.readonly_lock', "está desligado (readonly_lock => false) — a defesa "
+                . "durante a exploração do harness fica só com --allowedTools da CLI (se o preset "
+                . "'{$presetNome}' tiver) + a denylist de código."];
+        }
+
+        if ($valor('tools_flag', null) === null) {
+            $checks[] = ['WARN', 'llm.cli_harness_preset', "o preset '{$presetNome}' não tem allowlist de "
+                . "tool própria confirmada (tools_flag null) — o readonly_lock (quando disponível) é a "
+                . "defesa principal durante a exploração pra esse preset."];
+        }
+
+        $allowedBasePath = config('driftguard.allowed_base_path', base_path());
+        if ($allowedBasePath === base_path()) {
+            $checks[] = ['WARN', 'llm.allowed_base_path', "está apontando pro projeto inteiro (base_path()) "
+                . "— pro modo harness, considere estreitar pra só models_path + supporting_paths: travar/"
+                . "explorar o projeto inteiro é mais lento e desnecessário."];
+        }
+
+        return $checks;
+    }
+
+    /** Sobrescrevível em teste pra simular Windows sem depender do SO real rodando a suite. */
+    protected function osFamily(): string
+    {
+        return PHP_OS_FAMILY;
     }
 }

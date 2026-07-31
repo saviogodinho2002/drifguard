@@ -193,7 +193,10 @@ class CliHarnessAnalysisClientTest extends TestCase
     /** allowedBasePath/harnessTools precisam virar argumentos de verdade no processo, não só na config. */
     public function test_allowed_base_path_and_harness_tools_are_passed_as_real_arguments(): void
     {
-        $argvCapturado = "{$this->tmpDir}/argv_capturado.json";
+        // fora de $this->tmpDir de propósito: com readonlyLock (default true), tmpDir fica travado
+        // contra escrita durante a chamada — o script fake precisa gravar o argv capturado em
+        // outro lugar, senão a própria instrumentação do teste seria bloqueada pelo lock.
+        $argvCapturado = sys_get_temp_dir() . '/driftguard_argv_capturado_' . uniqid() . '.json';
         $script = $this->fakeCommand(<<<PHP
         file_put_contents('{$argvCapturado}', json_encode(\$argv));
         echo json_encode(['result' => json_encode(['tool' => 'propose_update', 'arguments' => []])]);
@@ -215,5 +218,71 @@ class CliHarnessAnalysisClientTest extends TestCase
         $this->assertContains($this->tmpDir, $argv);
         $this->assertContains('--allowedTools', $argv);
         $this->assertContains('Read,Grep', $argv);
+
+        @unlink($argvCapturado);
+    }
+
+    /**
+     * Piso de segurança (achado numa revisão): harness_tools é 100% configurável pelo host, sem
+     * guarda nenhuma antes disso — nada impedia 'harness_tools' => ['Read', 'Bash'] de virar
+     * --allowedTools "Read,Bash" de verdade. DENYLIST_TOOLS filtra isso sempre, mesmo configurado
+     * explicitamente.
+     */
+    public function test_dangerous_tools_are_always_filtered_out_regardless_of_config(): void
+    {
+        $argvCapturado = sys_get_temp_dir() . '/driftguard_argv_denylist_' . uniqid() . '.json';
+        $script = $this->fakeCommand(<<<PHP
+        file_put_contents('{$argvCapturado}', json_encode(\$argv));
+        echo json_encode(['result' => json_encode(['tool' => 'propose_update', 'arguments' => []])]);
+        PHP);
+
+        $client = new CliHarnessAnalysisClient(
+            command: $script,
+            extraArgs: [],
+            allowedBasePath: $this->tmpDir,
+            harnessTools: ['Read', 'Bash', 'Grep', 'Write', 'Edit', 'NotebookEdit'],
+        );
+        $client->chat([], $this->toolsBasicos());
+
+        $argv = json_decode(file_get_contents($argvCapturado), true);
+        $indiceFlag = array_search('--allowedTools', $argv, true);
+        $listaTools = $argv[$indiceFlag + 1];
+
+        $this->assertStringContainsString('Read', $listaTools);
+        $this->assertStringContainsString('Grep', $listaTools);
+        $this->assertStringNotContainsString('Bash', $listaTools);
+        $this->assertStringNotContainsString('Write', $listaTools);
+        $this->assertStringNotContainsString('Edit', $listaTools);
+        $this->assertStringNotContainsString('NotebookEdit', $listaTools);
+
+        @unlink($argvCapturado);
+    }
+
+    /**
+     * Camada principal de defesa (achado na mesma revisão): o diretório precisa estar REALMENTE
+     * travado contra escrita durante a chamada, não só ter as tools "certas" descritas — testa que
+     * uma escrita de verdade DENTRO do diretório travado falha durante a execução do subprocesso, e
+     * volta a funcionar depois que `chat()` retorna.
+     */
+    public function test_allowed_base_path_is_locked_during_the_call_and_unlocked_after(): void
+    {
+        $resultadoEscrita = sys_get_temp_dir() . '/driftguard_resultado_escrita_' . uniqid() . '.txt';
+        $script = $this->fakeCommand(<<<PHP
+        \$conseguiu = @file_put_contents(__DIR__ . '/arquivo_durante_lock.txt', 'nao deveria conseguir');
+        file_put_contents('{$resultadoEscrita}', \$conseguiu === false ? 'BLOQUEADO' : 'ESCREVEU');
+        echo json_encode(['result' => json_encode(['tool' => 'propose_update', 'arguments' => []])]);
+        PHP);
+
+        $client = new CliHarnessAnalysisClient(
+            command: $script,
+            extraArgs: [],
+            allowedBasePath: $this->tmpDir,
+        );
+        $client->chat([], $this->toolsBasicos());
+
+        $this->assertSame('BLOQUEADO', file_get_contents($resultadoEscrita), 'escrita dentro do allowedBasePath deveria ter sido bloqueada DURANTE a chamada');
+        $this->assertNotFalse(@file_put_contents("{$this->tmpDir}/depois.txt", 'ok'), 'diretório deveria estar destravado DEPOIS da chamada');
+
+        @unlink($resultadoEscrita);
     }
 }

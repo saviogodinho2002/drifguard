@@ -148,6 +148,7 @@ class DriftGuardServiceProvider extends ServiceProvider
             harnessTools: $valor('harness_tools', ['Read', 'Grep', 'Glob']),
             dirFlag: $valor('dir_flag', '--add-dir'),
             toolsFlag: $valor('tools_flag', '--allowedTools'),
+            readonlyLock: $config['readonly_lock'] ?? true,
         );
     }
 

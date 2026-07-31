@@ -72,7 +72,10 @@ class CliHarnessProviderBindingTest extends TestCase
 
     public function test_claude_preset_still_passes_its_own_flags_by_default(): void
     {
-        $argvFile = "{$this->tmpDir}/argv.json";
+        // fora de $this->tmpDir de propósito: allowed_base_path === tmpDir fica travado contra
+        // escrita durante a chamada (readonly_lock, default true) — o script fake precisa gravar
+        // o argv capturado em outro lugar.
+        $argvFile = sys_get_temp_dir() . '/driftguard_argv_' . uniqid() . '.json';
         $comandoFake = $this->fakeCommandCapturandoArgv($argvFile);
 
         config(['driftguard.llm.driver' => 'cli_harness']);
@@ -89,5 +92,7 @@ class CliHarnessProviderBindingTest extends TestCase
         $this->assertContains('--add-dir', $argv);
         $this->assertContains($this->tmpDir, $argv);
         $this->assertContains('--allowedTools', $argv);
+
+        @unlink($argvFile);
     }
 }

@@ -3,11 +3,48 @@
 Todas as mudanças notáveis deste projeto são documentadas aqui. Formato baseado em
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
+## [0.7.1] - 2026-07-31
+
+Motivado por uma revisão de segurança do modo `cli_harness` (v0.7.0): a única garantia contra o
+harness escrever no código durante a exploração vinha inteiramente da CLI alvo (`--allowedTools`)
+— e os presets `gemini`/`opencode` nem tinham isso confirmado. Corrigido com um bloqueio de escrita
+no nível do sistema de arquivos, independente da CLI.
+
+### Added
+- **`ReadOnlyLock`** — trava `allowed_base_path` contra escrita (`chmod` removendo bits de escrita,
+  restaurando o modo EXATO de cada arquivo depois, mesmo em erro/timeout) antes de
+  `CliHarnessAnalysisClient` rodar o subprocesso. Camada principal de defesa durante a exploração —
+  funciona igual pros 3 presets, não depende de a CLI ter allowlist de tool própria. Exclui sempre
+  `storage/`, `bootstrap/cache/`, `vendor/`, `node_modules/`, `.git/`, mesmo dentro do path travado.
+  Validado com probe real (arquivos de modos originais diferentes, 644 e 600, na mesma árvore):
+  leitura/`scandir()` continuam funcionando normalmente enquanto travado, escrita/`unlink()` são
+  bloqueados de verdade pelo SO, e a restauração é exata por arquivo, não um valor genérico.
+  **Não funciona em Windows** — `chmod()` lá não impõe restrição real de diretório (só um atributo
+  cosmético do NTFS) — detectado via `PHP_OS_FAMILY` e desabilitado automaticamente nesse caso, em
+  vez de fingir uma garantia que não se sustenta.
+- `llm.readonly_lock` em `config/driftguard.php` (default `true`).
+- **Denylist de tools perigosas** em `CliHarnessAnalysisClient` — `Bash`/`Write`/`Edit`/
+  `NotebookEdit` nunca entram na allowlist passada pra CLI, mesmo configuradas explicitamente em
+  `harness_tools`. Antes, `harness_tools` era 100% configurável sem guarda nenhuma no código — só
+  o valor default evitava essas tools.
+- `driftguard:doctor` ganha 4 avisos novos (nível `WARN`, nunca falha o exit code) pro modo
+  `cli_harness`: `readonly_lock` desabilitado no Windows (automático) ou desligado manualmente;
+  preset ativo sem `tools_flag` confirmado (`gemini`/`opencode` hoje); `allowed_base_path` apontando
+  pro projeto inteiro em vez de um escopo mais estreito.
+
+### Changed
+- README: nova seção explicando as 3 camadas de segurança durante a exploração (readonly_lock →
+  allowlist da CLI → denylist de código) e por que usar o driftguard em vez de chamar a CLI direto
+  (reflection-first, diff incremental, portão de revisão humana, guardas de `scope_class` — nenhuma
+  dessas garantias sai da chamada à IA sozinha). Também removido hedging sobre processo de teste
+  ("validado duas vezes", números de uma chamada específica) que não pertencia a um guia de uso
+  vivo — esses números continuam nas entradas de changelog anteriores, onde já faziam sentido.
+
 ## [0.7.0] - 2026-07-30
 
-Motivado por uma pergunta direta: dá pra trocar o provedor de análise por um agente-CLI (Claude
-Code, Gemini CLI, opencode) em vez de uma API paga por token, com a mesma qualidade? Testei de
-verdade antes de escrever qualquer código — nada de assumir.
+Motivado por avaliar se um agente-CLI (Claude Code, Gemini CLI, opencode) rodando como subprocesso
+pode substituir a API paga por token como provedor de análise, com qualidade equivalente — testado
+de verdade antes de escrever qualquer código, nada assumido.
 
 ### Added
 - **`CliHarnessAnalysisClient`** — nova implementação de `Contracts\AnalysisClient` que invoca um

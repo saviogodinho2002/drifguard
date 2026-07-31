@@ -3,6 +3,7 @@
 namespace Saviogodinho2002\DriftGuard\Tests\Console;
 
 use Illuminate\Support\Facades\Artisan;
+use Saviogodinho2002\DriftGuard\Console\DoctorCommand;
 use Saviogodinho2002\DriftGuard\Tests\TestCase;
 
 class DoctorCommandTest extends TestCase
@@ -142,5 +143,85 @@ class DoctorCommandTest extends TestCase
 
         $this->assertSame(1, $exitCode);
         $this->assertStringContainsString('duplicado', Artisan::output());
+    }
+
+    /**
+     * Achados de uma revisão de segurança: modo `cli_harness` ganha 4 avisos novos (nunca FAIL,
+     * são só sinalização) sobre as camadas de defesa durante a exploração do harness.
+     */
+    public function test_no_harness_warnings_when_driver_is_openrouter(): void
+    {
+        $exitCode = Artisan::call('driftguard:doctor');
+        $output   = Artisan::output();
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringNotContainsString('readonly_lock', $output);
+        $this->assertStringNotContainsString('cli_harness_preset', $output);
+    }
+
+    public function test_warns_when_readonly_lock_disabled_on_non_windows(): void
+    {
+        config(['driftguard.llm.driver' => 'cli_harness']);
+        config(['driftguard.llm.readonly_lock' => false]);
+
+        $exitCode = Artisan::call('driftguard:doctor');
+        $output   = Artisan::output();
+
+        $this->assertSame(0, $exitCode, 'aviso é WARN, nunca deveria falhar o exit code');
+        $this->assertStringContainsString('está desligado', $output);
+    }
+
+    public function test_warns_about_readonly_lock_being_unavailable_on_windows(): void
+    {
+        config(['driftguard.llm.driver' => 'cli_harness']);
+
+        $this->app->bind(DoctorCommand::class, fn() => new class extends DoctorCommand {
+            protected function osFamily(): string
+            {
+                return 'Windows';
+            }
+        });
+
+        $exitCode = Artisan::call('driftguard:doctor');
+        $output   = Artisan::output();
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('não funciona no Windows', $output);
+    }
+
+    public function test_warns_when_preset_has_no_tools_flag(): void
+    {
+        config(['driftguard.llm.driver' => 'cli_harness']);
+        config(['driftguard.llm.cli_harness_preset' => 'gemini']);
+
+        $exitCode = Artisan::call('driftguard:doctor');
+        $output   = Artisan::output();
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString("preset 'gemini' não tem allowlist", $output);
+    }
+
+    public function test_no_tools_flag_warning_for_claude_preset(): void
+    {
+        config(['driftguard.llm.driver' => 'cli_harness']);
+        config(['driftguard.llm.cli_harness_preset' => 'claude']);
+
+        $exitCode = Artisan::call('driftguard:doctor');
+        $output   = Artisan::output();
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringNotContainsString('não tem allowlist', $output);
+    }
+
+    public function test_warns_when_allowed_base_path_is_the_whole_project(): void
+    {
+        config(['driftguard.llm.driver' => 'cli_harness']);
+        config(['driftguard.allowed_base_path' => base_path()]);
+
+        $exitCode = Artisan::call('driftguard:doctor');
+        $output   = Artisan::output();
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('projeto inteiro', $output);
     }
 }
