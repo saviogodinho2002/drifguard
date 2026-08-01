@@ -95,9 +95,10 @@ esquecido `--dry-run`.
 `usage` (em `analyze --json`) é `{cost_usd, prompt_tokens, completion_tokens}`, somado ao longo de
 TODAS as chamadas ao LLM da rodada (pode haver mais de 1 por model, quando há `request_file`/
 `request_method`/correção de `scope_class` no meio). Cada campo é best-effort: fica `null` quando o
-provedor/preset não expõe esse dado (ex: `cli_harness` com preset `gemini`, que não expõe custo em
-modo headless hoje) — nunca inventado/estimado. Se TODO campo vier `null`, é porque nenhuma chamada
-da rodada reportou nada, não porque o custo foi zero.
+provedor/preset não expõe esse dado — nunca inventado/estimado (ex: `cli_harness` com preset
+`gemini`, que não tem custo em dólar em NENHUM lugar do schema da CLI, confirmado no código-fonte;
+ver detalhes por preset na seção do `cli_harness` abaixo). Se TODO campo vier `null`, é porque
+nenhuma chamada da rodada reportou nada, não porque o custo foi zero.
 
 ## Customizando pro seu domínio
 
@@ -209,10 +210,9 @@ flag específica de outra CLI (como `--add-dir`/`--allowedTools`, do Claude Code
 preset não definiu uma equivalente.
 
 **Custo/tokens por chamada aparecem no `analyze --json`** (chave `usage`, ver seção `--json` acima),
-extraídos de cada preset via `cost_field`/`prompt_tokens_field`/`completion_tokens_field` — caminhos
-no estilo dot-path (`'usage.input_tokens'`), com suporte a `*` como segmento curinga pra somar
-através de uma chave dinâmica (a Gemini CLI reporta tokens por model, não um total único pronto:
-`'stats.models.*.tokens.prompt'`). Custo continua sendo logado via
+extraídos de cada preset via `cost_field`/`prompt_tokens_field`/`completion_tokens_field` — o quanto
+cada CLI realmente expõe e como é lido está detalhado no último item de "Trade-offs" logo abaixo.
+Custo também continua sendo logado via
 `Log::info('[driftguard] CliHarnessAnalysisClient: custo da chamada', [...])` a cada chamada, útil
 pra acompanhar em tempo real (`storage/logs/laravel.log` por padrão) sem esperar a rodada terminar.
 
@@ -236,9 +236,11 @@ pra acompanhar em tempo real (`storage/logs/laravel.log` por padrão) sem espera
   não "ainda não" — confirmado lendo o código-fonte da CLI). opencode expõe custo/tokens num evento
   `step_finish` (`part.cost`, `part.tokens.{input,output}`) DIFERENTE do evento que carrega o texto
   final (`text`, `part.text`) — pode haver mais de 1 `step_finish` numa resposta só (loop de
-  tool-call interno do harness), somados entre si. Os shapes de `gemini`/`opencode` vêm do
-  código-fonte de cada CLI, não de uma chamada autenticada de ponta a ponta neste pacote — ajuste
-  os `*_field` em `cli_harness` se a versão instalada divergir.
+  tool-call interno do harness), somados entre si. Cada `*_field` aceita um caminho dot-path (ex:
+  `'usage.input_tokens'`), com `*` como segmento curinga pra somar através de uma chave dinâmica
+  (o caso do Gemini, tokens por model). Os shapes de `gemini`/`opencode` vêm do código-fonte de cada
+  CLI, não de uma chamada autenticada de ponta a ponta neste pacote — ajuste os `*_field` em
+  `cli_harness` se a versão instalada divergir.
 
 ### Segurança durante a exploração: 3 camadas independentes
 
