@@ -189,9 +189,10 @@ de receber um snippet pré-empacotado pelo orçamento de contexto do driftguard.
 
 O preset `claude` usa o Claude Code CLI: a saída é um JSON limpo, exatamente no formato pedido, com
 regras de negócio numeradas e cross-referências que o harness descobre sozinho via Grep (sem
-precisar que você cite o arquivo relacionado no prompt). `gemini`/`opencode` seguem a documentação
-oficial de cada CLI; se a sua versão usar uma flag diferente, sobrescreva qualquer chave em
-`llm.cli_harness` (mesmo padrão de override do resto do pacote):
+precisar que você cite o arquivo relacionado no prompt). `gemini`/`opencode` também são suportados
+(nível de confiança de cada shape explicado nos trade-offs abaixo); se a sua versão usar um shape
+diferente, sobrescreva qualquer chave em `llm.cli_harness` (mesmo padrão de override do resto do
+pacote):
 
 ```php
 'cli_harness' => [

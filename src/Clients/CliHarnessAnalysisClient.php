@@ -44,18 +44,20 @@ class CliHarnessAnalysisClient implements AnalysisClient
         /** 'single_json' (Claude Code CLI, Gemini CLI) | 'json_stream' (opencode) | 'plain_text' (fallback). */
         private readonly string $responseFormat = 'single_json',
         /**
-         * Caminho (dot-path, ex: 'usage.input_tokens') até o texto final. Em single_json, resolvido
-         * contra o objeto decodificado inteiro. Em json_stream, resolvido contra o evento tipo
-         * "text" (não o de finalização de passo — são eventos DIFERENTES no stream real do
-         * opencode). Null em plain_text (usa o stdout inteiro).
+         * Caminho (dot-path, ex: 'response', ou 'part.text' pra json_stream) até o texto final. Em
+         * single_json, resolvido contra o objeto decodificado inteiro. Em json_stream, resolvido
+         * contra o evento tipo "text" (não o de finalização de passo — são eventos DIFERENTES no
+         * stream real do opencode). Null em plain_text (usa o stdout inteiro).
          */
         private readonly ?string $resultField = 'result',
         /**
-         * Caminho (dot-path) até o custo em USD. Em json_stream, resolvido contra CADA evento de
-         * finalização de passo ("step_finish"/"step-finish") e SOMADO entre eles (pode haver mais
-         * de 1 passo de LLM numa só resposta). Suporta `*` como segmento curinga pra somar através
-         * de um dicionário de chave dinâmica (ex: 'stats.models.*.tokens.prompt', quando a CLI
-         * reporta por model, não um total único). Null = sem rastreio de custo disponível.
+         * Caminho (dot-path, ex: 'total_cost_usd', ou 'part.cost' pra json_stream) até o custo em
+         * USD. Em json_stream, resolvido contra CADA evento de finalização de passo
+         * ("step_finish"/"step-finish") e SOMADO entre eles (pode haver mais de 1 passo de LLM numa
+         * só resposta). Suporta `*` como segmento curinga pra somar através de um dicionário de
+         * chave dinâmica, mesma mecânica de `promptTokensField`/`completionTokensField` abaixo — na
+         * prática nenhum preset hoje reporta custo por chave dinâmica, só tokens (ver Gemini). Null
+         * = sem rastreio de custo disponível.
          */
         private readonly ?string $costField = 'total_cost_usd',
         /** Caminho (dot-path, mesmo suporte a `*`) até tokens de entrada/prompt. Null = indisponível. */
@@ -263,7 +265,7 @@ class CliHarnessAnalysisClient implements AnalysisClient
         return ['texto' => $texto, 'custo' => $custo, 'prompt_tokens' => $promptTokens, 'completion_tokens' => $completionTokens];
     }
 
-    /** Lookup simples por dot-path (ex: 'usage.input_tokens') — sem suporte a `*`, pro texto (não-numérico). */
+    /** Lookup simples por dot-path (ex: 'response', ou 'part.text') — sem suporte a `*`, pro texto (não-numérico). */
     private function valorEmCaminho(array $dados, ?string $caminho): mixed
     {
         if ($caminho === null) {
